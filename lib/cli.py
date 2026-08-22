@@ -121,10 +121,13 @@ def cmd_summarize(args: argparse.Namespace) -> int:
 def cmd_classify(args: argparse.Namespace) -> int:
     from lib import db
     from lib.ai import AIError, OpenRouterClient, classify_item
+    from lib.discogs import DiscogsClient
 
     secrets = config.load_secrets()
     conn = db.connect()
     client = OpenRouterClient(secrets["openrouter_key"])
+    discogs = DiscogsClient(secrets["discogs_pat"]) if args.apply else None
+    username = db.get_setting(conn, "username")
     folders = {
         f["name"]: f["id"]
         for f in conn.execute("SELECT * FROM folders WHERE id != 1").fetchall()
@@ -155,7 +158,21 @@ def cmd_classify(args: argparse.Namespace) -> int:
                 print(f"? {item['title']} ({item['artist']}) → {suggestion} — {result.get('reason', '')}")
         else:
             print(f"— {item['title']} ({item['artist']}) → {suggestion} — {result.get('reason', '')}")
-    print("\n(no changes made — move items in the web app)")
+            if args.apply and suggestion in folders:
+                discogs.move_instance(
+                    username, item["folder_id"], item["release_id"], item["instance_id"],
+                    folders[suggestion],
+                )
+                with conn:
+                    conn.execute(
+                        "UPDATE items SET folder_id = ? WHERE instance_id = ?",
+                        (folders[suggestion], item["instance_id"]),
+                    )
+                print("  ✔ moved")
+    if args.apply:
+        print("\n(moves applied — review in the web app, drag back anything misfiled)")
+    else:
+        print("\n(no changes made — use --apply to move, or move items in the web app)")
     return 0
 
 
@@ -235,6 +252,7 @@ def main() -> None:
     p_cls = sub.add_parser("classify", help="AI folder suggestions")
     p_cls.add_argument("--review", metavar="FOLDER", help="flag items that may not fit this folder")
     p_cls.add_argument("--limit", type=int, default=20)
+    p_cls.add_argument("--apply", action="store_true", help="actually move items to suggested folders")
     p_cls.set_defaults(func=cmd_classify)
 
     p_labels = sub.add_parser("labels", help="print or export labels")
