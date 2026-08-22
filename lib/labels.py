@@ -96,21 +96,33 @@ def _qr(url: str, size: int) -> Image.Image:
 
 
 def render_divider(name: str, genre_line: str, qr_url: str, folder_id: int | None = None) -> Image.Image:
-    img = Image.new("L", (WIDTH, DIVIDER_HEIGHT), 255)
+    """Title across the full top row; genres (left) and QR (right) below."""
+    img = Image.new("L", (WIDTH, 520), 255)
     draw = ImageDraw.Draw(img)
-    text_width = WIDTH - MARGIN - QR_SIZE - 2 * MARGIN
+    full_width = WIDTH - 2 * MARGIN
+    y = MARGIN
 
-    title = name.upper()
-    title_font = _fit_font(draw, title, "bold", 110, text_width)
-    draw.text((MARGIN, 60), title, font=title_font, fill=0)
+    title_font, title_lines = _fit_or_wrap(draw, name.upper(), "bold", 110, 60, full_width)
+    for line in title_lines:
+        draw.text((MARGIN, y), line, font=title_font, fill=0)
+        y += title_font.size + 8
+    y += 12
+    row_top = y
+
+    qr_bottom = _qr_block(img, draw, qr_url, f"[f{folder_id}]" if folder_id else "", row_top)
+
+    genre_bottom = row_top
     if genre_line:
-        genre_font = _fit_font(draw, genre_line, "italic", 36, text_width)
-        draw.text((MARGIN, 200), genre_line, font=genre_font, fill=0)
+        genre_width = WIDTH - QR_SIZE - 3 * MARGIN
+        genre_font, genre_lines = _fit_or_wrap(draw, genre_line, "italic", 44, 32, genre_width)
+        gy = row_top + 8
+        for line in genre_lines:
+            draw.text((MARGIN, gy), line, font=genre_font, fill=0)
+            gy += genre_font.size + 8
+        genre_bottom = gy
 
-    caption = f"[f{folder_id}]" if folder_id else ""
-    qr_y = (DIVIDER_HEIGHT - QR_SIZE - 24) // 2
-    _qr_block(img, draw, qr_url, caption, qr_y)
-    return img
+    height = min(520, max(DIVIDER_HEIGHT, max(qr_bottom, genre_bottom) + MARGIN))
+    return img.crop((0, 0, WIDTH, height))
 
 
 def render_sleeve(item: dict, qr_url: str, include_paid: bool = False) -> Image.Image:
