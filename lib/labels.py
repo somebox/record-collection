@@ -46,7 +46,7 @@ def _fit_font(draw: ImageDraw.ImageDraw, text: str, style: str, size: int, max_w
 
 def _fit_or_wrap(
     draw: ImageDraw.ImageDraw, text: str, style: str,
-    max_size: int, min_size: int, max_width: int,
+    max_size: int, min_size: int, max_width: int, max_lines: int = 2,
 ) -> tuple[ImageFont.FreeTypeFont, list[str]]:
     """Shrink between max and min size on one line; below the floor, wrap instead."""
     size = max_size
@@ -56,7 +56,7 @@ def _fit_or_wrap(
             return font, [text]
         size -= 2
     font = _font(style, min_size)
-    return font, _wrap(draw, text, font, max_width, max_lines=2)
+    return font, _wrap(draw, text, font, max_width, max_lines=max_lines)
 
 
 def _qr_block(img: Image.Image, draw: ImageDraw.ImageDraw, url: str, caption: str, y: int) -> int:
@@ -114,7 +114,7 @@ def render_divider(name: str, genre_line: str, qr_url: str, folder_id: int | Non
     genre_bottom = row_top
     if genre_line:
         genre_width = WIDTH - QR_SIZE - 3 * MARGIN
-        genre_font, genre_lines = _fit_or_wrap(draw, genre_line, "italic", 44, 32, genre_width)
+        genre_font, genre_lines = _fit_or_wrap(draw, genre_line, "italic", 56, 44, genre_width, max_lines=3)
         gy = row_top + 8
         for line in genre_lines:
             draw.text((MARGIN, gy), line, font=genre_font, fill=0)
