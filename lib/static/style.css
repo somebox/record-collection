@@ -335,19 +335,24 @@ img.labelpreview {
 }
 .modal-close {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 14px;
+  right: 14px;
   border: none;
   font-size: 16px;
   line-height: 1;
   padding: 6px 8px;
 }
+/* Keep clear of the close button: extra top/right padding inside the modal. */
+.modal-box .detail { padding: 40px 36px 24px 24px; }
+
 .modal-nav {
   align-self: center;
-  margin: 0 14px;
-  padding: 14px 10px;
+  margin: 0;
+  padding: 26px 14px;
   flex-shrink: 0;
 }
+/* Invisible-but-present so the modal doesn't shift when an arrow disappears. */
+.modal-nav[hidden] { display: inline-block !important; visibility: hidden; }
 .modal-nav .icon { vertical-align: -4px; }
 
 .backlink { padding: 14px 20px 0; }
@@ -356,6 +361,6 @@ img.labelpreview {
 /* -- responsive ------------------------------------------------------------ */
 @media (max-width: 900px) {
   .detail { grid-template-columns: 1fr; }
-  .modal-nav { display: none !important; }
+  .modal-nav, .modal-nav[hidden] { display: none !important; }
   .searchbox input { width: 160px; }
 }
