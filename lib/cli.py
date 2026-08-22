@@ -200,7 +200,10 @@ def cmd_labels(args: argparse.Namespace) -> int:
             _stats, top_genres = folder_stats(conn, folder["id"])
         genre_line = " · ".join(top_genres)
         qr = f"https://www.discogs.com/user/{username}/collection?folder={folder['id']}"
-        images.append((f"divider-{folder['name']}", labels.render_divider(folder["name"], genre_line, qr)))
+        images.append((
+            f"divider-{folder['name']}",
+            labels.render_divider(folder["name"], genre_line, qr, folder_id=folder["id"]),
+        ))
     else:
         rows = conn.execute(
             "SELECT * FROM items WHERE folder_id = ? ORDER BY artist, year", (folder["id"],)

@@ -1,30 +1,7 @@
 {% from "_icons.html" import icon %}
 <div class="detail folderdetail">
-  <div class="fields" data-folder="{{ folder.id }}">
+  <aside class="detail-info">
     <h2><span class="swatch big" style="background: {{ folder.id|folder_color }}"></span>{{ folder.name }}</h2>
-
-    <div class="field">
-      <div class="head">Folder name</div>
-      <div class="actions-row">
-        <input class="edit" id="folder-name" value="{{ folder.name }}" data-orig="{{ folder.name }}"
-               {{ 'disabled' if folder.id == 1 }}>
-        <button type="button" id="rename-folder" data-folder="{{ folder.id }}"
-                {{ 'disabled title="Uncategorized cannot be renamed"' if folder.id == 1 }}>{{ icon("check") }} Rename</button>
-        <span class="save-status dim"></span>
-      </div>
-    </div>
-
-    <div class="field">
-      <div class="head">Color</div>
-      <div class="palette" data-folder="{{ folder.id }}">
-        {% for c in palette %}
-        <button type="button" class="palette-swatch {{ 'selected' if folder.color == c }}"
-                data-color="{{ c }}" style="background: {{ c }}" title="{{ c }}"></button>
-        {% endfor %}
-        <button type="button" class="palette-auto {{ 'selected' if not folder.color }}" data-color="">auto</button>
-      </div>
-    </div>
-
     <dl class="statgrid">
       <dt>Records</dt><dd>{{ stats.n }}</dd>
       <dt>Top genres</dt><dd>{{ top_genres|join(" · ") or "—" }}</dd>
@@ -32,15 +9,41 @@
       <dt>Summary filled</dt><dd>{{ stats.with_summary }}/{{ stats.n }}</dd>
       <dt>Est. value</dt><dd>{{ stats.total|money or "—" }} <span class="dim">({{ stats.priced }}/{{ stats.n }} priced)</span></dd>
       <dt>Last added</dt><dd>{{ stats.last_added|shortdate or "—" }}</dd>
+      <dt>Discogs</dt><dd><span class="dim">[f{{ folder.id }}]</span></dd>
     </dl>
-
     <div class="field">
       <div class="head">Divider label</div>
       <img class="labelpreview" src="{{ url_for('label_divider', folder_id=folder.id) }}" alt="divider label preview">
       <div class="actions-row">
-        <button type="button" id="print-divider" data-folder="{{ folder.id }}">{{ icon("print") }} Print divider</button>
-        <button type="button" id="print-sleeves" data-folder="{{ folder.id }}" data-count="{{ stats.n }}">{{ icon("print") }} Print sleeves ({{ stats.n }})</button>
-        <span class="print-status dim"></span>
+        <button type="button" id="print-divider" data-folder="{{ folder.id }}">{{ icon("print") }} Divider</button>
+        <button type="button" id="print-sleeves" data-folder="{{ folder.id }}" data-count="{{ stats.n }}">{{ icon("print") }} Sleeves ({{ stats.n }})</button>
+        <span class="print-status" aria-live="polite"></span>
+      </div>
+    </div>
+  </aside>
+
+  <div class="fields detail-form" data-folder="{{ folder.id }}">
+    <div class="field">
+      <div class="head">Folder name</div>
+      <div class="actions-row">
+        <input class="edit" id="folder-name" value="{{ folder.name }}" data-orig="{{ folder.name }}"
+               {{ 'disabled' if folder.id == 1 }}>
+        <button type="button" id="rename-folder" data-folder="{{ folder.id }}"
+                {{ 'disabled title="Uncategorized cannot be renamed"' if folder.id == 1 }}>{{ icon("check") }} Rename</button>
+        <span class="save-status" aria-live="polite"></span>
+      </div>
+    </div>
+
+    <div class="field">
+      <div class="head">Color</div>
+      <div class="palette" data-folder="{{ folder.id }}">
+        {% for c in palette %}
+        <button type="button" class="palette-swatch btn-plain {{ 'selected' if folder.color == c }}"
+                data-color="{{ c }}" style="background: {{ c }}"
+                aria-label="set color {{ c }}" aria-pressed="{{ 'true' if folder.color == c else 'false' }}"></button>
+        {% endfor %}
+        <button type="button" class="palette-auto {{ 'selected' if not folder.color }}" data-color=""
+                aria-pressed="{{ 'false' if folder.color else 'true' }}">auto</button>
       </div>
     </div>
 
@@ -51,15 +54,15 @@
         <button type="button" id="delete-folder-start">{{ icon("trash") }} Delete…</button>
         <span class="delete-confirm" hidden>
           move {{ stats.n }} item(s) to
-          <select id="delete-move-to">
+          <select id="delete-move-to" aria-label="destination folder">
             {% for f in folders if f.id != folder.id %}
             <option value="{{ f.id }}" {{ 'selected' if f.id == 1 }}>{{ f.name }}</option>
             {% endfor %}
           </select>
-          <button type="button" id="delete-folder-confirm" data-folder="{{ folder.id }}">{{ icon("trash") }} Confirm delete</button>
+          <button type="button" id="delete-folder-confirm" data-folder="{{ folder.id }}">{{ icon("trash") }} Confirm</button>
           <button type="button" id="delete-folder-cancel">{{ icon("x") }} Cancel</button>
         </span>
-        <span class="delete-status dim"></span>
+        <span class="delete-status" aria-live="polite"></span>
       </div>
     </div>
     {% endif %}

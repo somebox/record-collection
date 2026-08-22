@@ -5,7 +5,8 @@
 <header class="topbar">
   <h1><a href="{{ url_for('index') }}">Record Collection</a></h1>
   <form class="searchbox" method="get">
-    <input type="search" name="q" value="{{ q }}" placeholder="search title, artist, style…">
+    <input type="search" name="q" value="{{ q }}" placeholder="search title, artist, style…"
+           aria-label="search collection">
   </form>
   <span class="meta">synced {{ last_sync|shortdate if last_sync else "never" }} · {{ total }} records</span>
 </header>
@@ -14,7 +15,7 @@
   <nav class="sidebar">
     <div class="head">Folders</div>
     <a class="folder {{ 'active' if not current }}" href="{{ url_for('folder_view', folder_id='all') }}">
-      <span><span class="swatch" style="background: #fff; border-style: dashed;"></span>All</span>
+      <span><span class="swatch swatch-all"></span>All</span>
       <span class="count">{{ total }}</span>
     </a>
     {% for f in folders if f.id != 1 %}
@@ -57,7 +58,7 @@
 
     <div class="bulkbar" id="bulkbar" hidden>
       <span id="bulk-count"></span>
-      <select id="bulk-action">
+      <select id="bulk-action" aria-label="bulk action">
         <option value="">action…</option>
         <optgroup label="Move to folder">
           {% for f in folders %}
@@ -69,12 +70,13 @@
         <option value="resync">Resync collection</option>
       </select>
       <button type="button" id="bulk-apply">{{ icon("check") }} Apply</button>
-      <span class="bulk-status dim"></span>
+      <span class="bulk-status" aria-live="polite"></span>
     </div>
 
+    <div class="table-scroll">
     <table class="items">
       {% macro sort_th(key, label, right=false) %}
-      <th {% if right %}style="text-align:right"{% endif %}>
+      <th {% if right %}class="num"{% endif %}>
         <a class="sortlink {{ 'active' if sort == key }}"
            href="?sort={{ key }}&dir={{ 'desc' if sort == key and direction == 'asc' else 'asc' }}&q={{ q }}">{{ label }}
           {{ icon("up" if sort == key and direction == "asc" else ("down" if sort == key else "updown"), 11) }}</a>
@@ -82,7 +84,7 @@
       {% endmacro %}
       <thead>
         <tr>
-          <th><input type="checkbox" id="sel-all" title="select / deselect all"></th>
+          <th><input type="checkbox" id="sel-all" title="select / deselect all" aria-label="select all records"></th>
           <th></th>
           {{ sort_th("title", "Title") }}
           {{ sort_th("artist", "Artist") }}
@@ -97,7 +99,7 @@
       <tbody>
         {% for i in items %}
         <tr class="{{ 'uncat' if i.folder_id == 1 }}" data-instance="{{ i.instance_id }}">
-          <td><input type="checkbox" class="sel" data-instance="{{ i.instance_id }}"></td>
+          <td><input type="checkbox" class="sel" data-instance="{{ i.instance_id }}" aria-label="select {{ i.title }}"></td>
           <td class="dragcell" draggable="true" title="drag to a folder">
             {% if i.thumb_url %}<img class="thumb" src="{{ i.thumb_url }}" alt="" loading="lazy">{% else %}<span class="thumb noimg"></span>{% endif %}
           </td>
@@ -115,18 +117,19 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
     <div class="statusbar">
       <span>{{ items|length }} records{% if current %} in {{ current.name }}{% endif %}{% if q %} matching “{{ q }}”{% endif %}</span>
     </div>
   </main>
 </div>
 
-<div class="modal" id="modal" hidden>
-  <button type="button" class="modal-nav" id="modal-prev" aria-label="previous album" hidden>{{ icon("left", 22) }}</button>
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-label="details" hidden>
+  <button type="button" class="modal-nav btn-plain" id="modal-prev" aria-label="previous album" hidden>{{ icon("left", 22) }}</button>
   <div class="modal-box">
-    <button type="button" class="modal-close" aria-label="close">{{ icon("x", 16) }}</button>
+    <button type="button" class="modal-close btn-plain" aria-label="close">{{ icon("x", 16) }}</button>
     <div class="modal-body"></div>
   </div>
-  <button type="button" class="modal-nav" id="modal-next" aria-label="next album" hidden>{{ icon("right", 22) }}</button>
+  <button type="button" class="modal-nav btn-plain" id="modal-next" aria-label="next album" hidden>{{ icon("right", 22) }}</button>
 </div>
 {% endblock %}

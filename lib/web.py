@@ -413,7 +413,7 @@ def _divider_image(conn, folder_id: int):
     _stats, top_genres = folder_stats(conn, folder_id)
     genre_line = " · ".join(top_genres)
     qr_url = f"https://www.discogs.com/user/{_username(conn)}/collection?folder={folder_id}"
-    return labels.render_divider(folder["name"], genre_line, qr_url)
+    return labels.render_divider(folder["name"], genre_line, qr_url, folder_id=folder_id)
 
 
 def _sleeve_image(conn, instance_id: int, include_paid: bool = False):

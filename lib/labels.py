@@ -9,8 +9,14 @@ from PIL import Image, ImageDraw, ImageFont
 
 WIDTH = 696  # printable dots across a 62mm roll
 DIVIDER_HEIGHT = 300
-SLEEVE_HEIGHT = 400
 MARGIN = 24
+
+# Continuous roll: length along the tape is variable, so sleeve labels grow to fit.
+SLEEVE_MIN_HEIGHT = 300
+SLEEVE_MAX_HEIGHT = 600
+
+QR_SIZE = 150  # fixed on both label types
+TITLE_MAX, TITLE_MIN = 48, 34  # shrink between these; wrap to 2 lines below the floor
 
 FONT_DIR = Path("/usr/share/fonts/truetype/liberation")
 FONTS = {
@@ -36,6 +42,31 @@ def _fit_font(draw: ImageDraw.ImageDraw, text: str, style: str, size: int, max_w
             return font
         size -= 4
     return _font(style, 12)
+
+
+def _fit_or_wrap(
+    draw: ImageDraw.ImageDraw, text: str, style: str,
+    max_size: int, min_size: int, max_width: int,
+) -> tuple[ImageFont.FreeTypeFont, list[str]]:
+    """Shrink between max and min size on one line; below the floor, wrap instead."""
+    size = max_size
+    while size >= min_size:
+        font = _font(style, size)
+        if draw.textlength(text, font=font) <= max_width:
+            return font, [text]
+        size -= 2
+    font = _font(style, min_size)
+    return font, _wrap(draw, text, font, max_width, max_lines=2)
+
+
+def _qr_block(img: Image.Image, draw: ImageDraw.ImageDraw, url: str, caption: str, y: int) -> int:
+    """QR at fixed size, top-right, with the Discogs id below. Returns block bottom."""
+    x = WIDTH - MARGIN - QR_SIZE
+    img.paste(_qr(url, QR_SIZE), (x, y))
+    font = _font("regular", 20)
+    caption_w = draw.textlength(caption, font=font)
+    draw.text((x + (QR_SIZE - caption_w) // 2, y + QR_SIZE + 4), caption, font=font, fill=0)
+    return y + QR_SIZE + 4 + font.size
 
 
 def _wrap(draw: ImageDraw.ImageDraw, text: str, font, max_width: int, max_lines: int) -> list[str]:
@@ -64,55 +95,55 @@ def _qr(url: str, size: int) -> Image.Image:
     return Image.open(buf).convert("L").resize((size, size), Image.NEAREST)
 
 
-def render_divider(name: str, genre_line: str, qr_url: str) -> Image.Image:
+def render_divider(name: str, genre_line: str, qr_url: str, folder_id: int | None = None) -> Image.Image:
     img = Image.new("L", (WIDTH, DIVIDER_HEIGHT), 255)
     draw = ImageDraw.Draw(img)
-    qr_size = 200
-    qr_x = WIDTH - MARGIN - qr_size
-    text_width = qr_x - 2 * MARGIN
+    text_width = WIDTH - MARGIN - QR_SIZE - 2 * MARGIN
 
     title = name.upper()
-    title_font = _fit_font(draw, title, "bold", 120, text_width)
+    title_font = _fit_font(draw, title, "bold", 110, text_width)
     draw.text((MARGIN, 60), title, font=title_font, fill=0)
     if genre_line:
         genre_font = _fit_font(draw, genre_line, "italic", 36, text_width)
         draw.text((MARGIN, 200), genre_line, font=genre_font, fill=0)
 
-    img.paste(_qr(qr_url, qr_size), (qr_x, (DIVIDER_HEIGHT - qr_size) // 2))
+    caption = f"[f{folder_id}]" if folder_id else ""
+    qr_y = (DIVIDER_HEIGHT - QR_SIZE - 24) // 2
+    _qr_block(img, draw, qr_url, caption, qr_y)
     return img
 
 
-SLEEVE_TOP = 210  # fixed-height top section: title / artist·year / style + QR right
-
-
 def render_sleeve(item: dict, qr_url: str, include_paid: bool = False) -> Image.Image:
-    img = Image.new("L", (WIDTH, SLEEVE_HEIGHT), 255)
+    # Draw on an oversized canvas, then crop: label length along the tape is variable.
+    img = Image.new("L", (WIDTH, SLEEVE_MAX_HEIGHT), 255)
     draw = ImageDraw.Draw(img)
-
-    # top section — fixed box, QR pinned right
-    qr_size = SLEEVE_TOP - 2 * MARGIN + 20
-    qr_x = WIDTH - MARGIN - qr_size
-    text_width = qr_x - 2 * MARGIN
+    text_width = WIDTH - MARGIN - QR_SIZE - 2 * MARGIN
     y = MARGIN
 
-    title_font = _fit_font(draw, item["title"], "bold", 52, text_width)
-    draw.text((MARGIN, y), item["title"], font=title_font, fill=0)
-    y += title_font.size + 12
+    title_font, title_lines = _fit_or_wrap(
+        draw, item["title"], "bold", TITLE_MAX, TITLE_MIN, text_width
+    )
+    for line in title_lines:
+        draw.text((MARGIN, y), line, font=title_font, fill=0)
+        y += title_font.size + 8
+    y += 4
 
     byline = item["artist"] + (f" · {item['year']}" if item.get("year") else "")
-    byline_font = _fit_font(draw, byline, "regular", 42, text_width)
+    byline_font = _fit_font(draw, byline, "regular", 40, text_width)
     draw.text((MARGIN, y), byline, font=byline_font, fill=0)
     y += byline_font.size + 12
 
     if item.get("style"):
         style_font = _fit_font(draw, item["style"], "italic", 28, text_width)
         draw.text((MARGIN, y), item["style"], font=style_font, fill=0)
+        y += style_font.size
 
-    img.paste(_qr(qr_url, qr_size), (qr_x, (SLEEVE_TOP - qr_size) // 2))
-    draw.line([(MARGIN, SLEEVE_TOP), (WIDTH - MARGIN, SLEEVE_TOP)], fill=0, width=2)
+    qr_bottom = _qr_block(img, draw, qr_url, f"[r{item['release_id']}]", MARGIN)
+    top = max(y, qr_bottom) + 14
+    draw.line([(MARGIN, top), (WIDTH - MARGIN, top)], fill=0, width=2)
 
-    # lower half — the long description, full width
-    y = SLEEVE_TOP + 14
+    # below the rule — the long description, full width
+    y = top + 14
     full_width = WIDTH - 2 * MARGIN
     # provenance line: notes, optionally with the paid price alongside its source
     provenance = [item.get("notes")] if item.get("notes") else []
@@ -121,15 +152,17 @@ def render_sleeve(item: dict, qr_url: str, include_paid: bool = False) -> Image.
     provenance_line = " · ".join(provenance)
     if item.get("summary"):
         sum_font = _font("italic", 28)
-        max_lines = 4 if provenance_line else 5
-        for line in _wrap(draw, item["summary"], sum_font, full_width, max_lines=max_lines):
+        for line in _wrap(draw, item["summary"], sum_font, full_width, max_lines=5):
             draw.text((MARGIN, y), line, font=sum_font, fill=0)
             y += sum_font.size + 6
         y += 6
     if provenance_line:
         notes_font = _fit_font(draw, provenance_line, "italic", 24, full_width)
         draw.text((MARGIN, y), provenance_line, font=notes_font, fill=0)
-    return img
+        y += notes_font.size
+
+    height = min(SLEEVE_MAX_HEIGHT, max(SLEEVE_MIN_HEIGHT, y + MARGIN))
+    return img.crop((0, 0, WIDTH, height))
 
 
 def print_images(images: list[Image.Image], model: str = "QL-700") -> None:
