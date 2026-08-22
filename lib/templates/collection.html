@@ -8,7 +8,9 @@
     <input type="search" name="q" value="{{ q }}" placeholder="search title, artist, style…"
            aria-label="search collection">
   </form>
-  <span class="meta">synced {{ last_sync|shortdate if last_sync else "never" }} · {{ total }} records</span>
+  <span class="meta">synced {{ last_sync|shortdate if last_sync else "never" }} · {{ total }} records
+    <button type="button" id="sync-now">{{ icon("sync") }} Sync</button>
+  </span>
 </header>
 
 <div class="layout">
