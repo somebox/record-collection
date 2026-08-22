@@ -129,14 +129,18 @@ def render_sleeve(item: dict, qr_url: str, include_paid: bool = False) -> Image.
     y += 4
 
     byline = item["artist"] + (f" · {item['year']}" if item.get("year") else "")
-    byline_font = _fit_font(draw, byline, "regular", 40, text_width)
-    draw.text((MARGIN, y), byline, font=byline_font, fill=0)
-    y += byline_font.size + 12
+    byline_font, byline_lines = _fit_or_wrap(draw, byline, "regular", 40, 28, text_width)
+    for line in byline_lines:
+        draw.text((MARGIN, y), line, font=byline_font, fill=0)
+        y += byline_font.size + 6
+    y += 6
 
     if item.get("style"):
-        style_font = _fit_font(draw, item["style"], "italic", 28, text_width)
-        draw.text((MARGIN, y), item["style"], font=style_font, fill=0)
-        y += style_font.size
+        style_font, style_lines = _fit_or_wrap(draw, item["style"], "italic", 28, 22, text_width)
+        for line in style_lines:
+            draw.text((MARGIN, y), line, font=style_font, fill=0)
+            y += style_font.size + 4
+        y -= 4
 
     qr_bottom = _qr_block(img, draw, qr_url, f"[r{item['release_id']}]", MARGIN)
     top = max(y, qr_bottom) + 14
