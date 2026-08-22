@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Patrick Hand', 'Comic Sans MS', cursive; color: #334155; }
+    a { color: #3b82f6; } a:hover { color: #1d4ed8; }
+    .box { border: 1.5px solid #94a3b8; background: #ffffff; }
+    .muted { color: #94a3b8; }
+    .lbl { font-size: 14px; color: #94a3b8; letter-spacing: 1px; }
+    .qr { background: repeating-conic-gradient(#334155 0% 25%, #ffffff 0% 50%) 0 0 / 10px 10px; border: 1.5px solid #334155; }
+  </style>
+</helmet>
+<div style="width: 980px; height: 640px; background: #ffffff; border: 1.5px solid #64748b; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden;">
+
+  <div style="display: flex; align-items: center; gap: 16px; padding: 14px 20px; border-bottom: 1.5px solid #94a3b8;">
+    <div style="font-size: 22px;">Print labels</div>
+    <div style="flex-grow: 1;"></div>
+    <div class="muted" style="font-size: 15px;">Brother QL-710W &middot; 62mm continuous roll</div>
+  </div>
+
+  <div style="display: flex; flex-grow: 1; min-height: 0;">
+
+    <div style="width: 250px; border-right: 1.5px solid #94a3b8; padding: 18px; display: flex; flex-direction: column; gap: 16px; box-sizing: border-box;">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <div class="lbl">FOLDER</div>
+        <div class="box" style="padding: 6px 12px; font-size: 16px;">jazz &#9662;</div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div class="lbl">LABEL TYPE</div>
+        <div style="display: flex; flex-direction: column; gap: 4px; font-size: 17px;">
+          <div><span style="display: inline-block; width: 14px; height: 14px; border: 1.5px solid #334155; border-radius: 50%; background: radial-gradient(circle, #334155 40%, #ffffff 45%);"></span> Divider label</div>
+          <div><span style="display: inline-block; width: 14px; height: 14px; border: 1.5px solid #94a3b8; border-radius: 50%;"></span> Sleeve labels (54)</div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <div class="lbl">SLEEVE LABELS FOR</div>
+        <div style="font-size: 16px; display: flex; flex-direction: column; gap: 2px;">
+          <div><span class="box" style="display: inline-block; width: 12px; height: 12px; background: #334155;"></span> all in folder</div>
+          <div><span class="box" style="display: inline-block; width: 12px; height: 12px;"></span> only missing / changed</div>
+        </div>
+      </div>
+      <div style="flex-grow: 1;"></div>
+      <div style="background: #334155; color: #ffffff; padding: 8px 0; text-align: center; font-size: 17px;">Print 1 label</div>
+    </div>
+
+    <div style="flex-grow: 1; padding: 20px; display: flex; flex-direction: column; gap: 18px; background: #f8fafc;">
+      <div class="lbl">PREVIEW</div>
+
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div class="muted" style="font-size: 15px;">divider label &mdash; sits on the crate divider tab</div>
+        <div class="box" style="display: flex; align-items: center; gap: 16px; padding: 10px 18px; width: 460px; box-sizing: border-box;">
+          <div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1;">
+            <div style="font-size: 34px; line-height: 1;">JAZZ</div>
+            <div class="muted" style="font-size: 15px;">bop &middot; modal &middot; fusion &middot; 54 records</div>
+          </div>
+          <div class="qr" style="width: 56px; height: 56px; flex-shrink: 0;"></div>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div class="muted" style="font-size: 15px;">sleeve label &mdash; sticks on the plastic outer sleeve</div>
+        <div class="box" style="display: flex; gap: 14px; padding: 12px 14px; align-items: center; width: 460px; box-sizing: border-box;">
+          <div style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
+            <div style="font-size: 19px;">Heavy Weather</div>
+            <div style="font-size: 15px;">Weather Report &middot; 1977</div>
+            <div style="font-size: 13px;" class="muted">fusion, upbeat, virtuosic</div>
+            <div style="font-size: 12px; line-height: 1.25;">Zawinul-era Weather Report at their peak; home of Birdland and A Remark You Made.</div>
+            <div style="font-size: 12px;" class="muted">Flohmarkt Z&uuml;rich</div>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 2px; flex-shrink: 0;">
+            <div class="qr" style="width: 64px; height: 64px;"></div>
+            <div class="muted" style="font-size: 11px;">discogs.com</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="muted" style="font-size: 15px;">queue: 1 divider &middot; 0 sleeves &middot; est. 6cm of tape</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

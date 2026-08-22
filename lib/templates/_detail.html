@@ -1,0 +1,97 @@
+{% from "_icons.html" import icon %}
+<div class="detail">
+  <div class="cover">
+    {% if item.cover_url %}<img src="{{ item.cover_url }}" alt="cover">{% endif %}
+    <h2>{{ item.title }}</h2>
+    <div class="dim">{{ item.artist }}{% if item.year %} · {{ item.year }}{% endif %}</div>
+    <div class="dim">{{ item.label }}{% if item.catno %} · {{ item.catno }}{% endif %}</div>
+    <p class="dim">
+      added {{ item.date_added|shortdate }}<br>
+      {% if item.price is not none %}discogs price {{ item.price|money }}<br>{% endif %}
+      {% if item.paid_price is not none %}paid {{ item.paid_price|money }}<br>{% endif %}
+      <a href="https://www.discogs.com/release/{{ item.release_id }}" target="_blank">{{ icon("external", 12) }} view on Discogs</a>
+    </p>
+  </div>
+
+  <div class="fields" data-instance="{{ item.instance_id }}">
+    <div class="field">
+      <div class="head">Folder</div>
+      <div class="actions-row">
+        <select class="edit" name="folder" data-orig="{{ item.folder_id }}">
+          {% for f in folders %}
+          <option value="{{ f.id }}" {{ 'selected' if f.id == item.folder_id }}>{{ f.name }}</option>
+          {% endfor %}
+        </select>
+        <button type="button" id="suggest-folder">{{ icon("sparkle") }} Suggest</button>
+      </div>
+      <div class="suggest-reason dim desc"></div>
+    </div>
+    <div class="field">
+      <div class="head">Style</div>
+      <input class="edit desc" name="style" value="{{ item.style or '' }}"
+             data-orig="{{ item.style or '' }}" placeholder="short descriptors, e.g. ambient, quiet, minimalist">
+    </div>
+    <div class="field">
+      <div class="head">Summary</div>
+      <textarea class="edit desc" name="summary" rows="3" data-orig="{{ item.summary or '' }}"
+                placeholder="one or two label-friendly sentences">{{ item.summary or '' }}</textarea>
+    </div>
+    <div class="field">
+      <div class="head">Notes</div>
+      <input class="edit desc" name="notes" value="{{ item.notes or '' }}"
+             data-orig="{{ item.notes or '' }}" placeholder="provenance — where bought, who gifted…">
+    </div>
+    <div class="field">
+      <div class="head">Genres / Discogs styles</div>
+      <div class="value dim">{{ item.genres }}{% if item.discogs_styles %} — {{ item.discogs_styles }}{% endif %}</div>
+    </div>
+    <div class="cols">
+      <div class="field">
+        <div class="head">Paid price <span class="dim">(app-only)</span></div>
+        <input class="edit" name="paid_price" inputmode="decimal"
+               value="{{ '%.2f'|format(item.paid_price) if item.paid_price is not none else '' }}"
+               data-orig="{{ '%.2f'|format(item.paid_price) if item.paid_price is not none else '' }}"
+               placeholder="what you paid, e.g. 12.50">
+      </div>
+      <div class="field">
+        <div class="head">Discogs price</div>
+        <div class="value dim">{{ item.price|money or "—" }}</div>
+      </div>
+    </div>
+    <div class="cols">
+      <div class="field">
+        <div class="head">Media condition</div>
+        <select class="edit" name="media_condition" data-orig="{{ item.media_condition or '' }}">
+          <option value=""></option>
+          {% for c in media_conditions %}
+          <option {{ 'selected' if item.media_condition == c }}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <div class="head">Sleeve condition</div>
+        <select class="edit" name="sleeve_condition" data-orig="{{ item.sleeve_condition or '' }}">
+          <option value=""></option>
+          {% for c in sleeve_conditions %}
+          <option {{ 'selected' if item.sleeve_condition == c }}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="actions-row">
+      <button type="button" id="save-fields">{{ icon("check") }} Save</button>
+      <button type="button" id="generate-ai">{{ icon("sparkle") }} Generate</button>
+      <span class="save-status dim"></span>
+    </div>
+    <div class="field">
+      <div class="head">Sleeve label</div>
+      <img class="labelpreview" id="sleeve-preview" data-base="{{ url_for('label_sleeve', instance_id=item.instance_id) }}"
+           src="{{ url_for('label_sleeve', instance_id=item.instance_id) }}" alt="label preview">
+      <div class="actions-row">
+        <button type="button" id="print-sleeve" data-instance="{{ item.instance_id }}">{{ icon("print") }} Print sleeve label</button>
+        <label class="dim"><input type="checkbox" id="label-paid"> show paid price</label>
+        <span class="print-status dim"></span>
+      </div>
+    </div>
+  </div>
+</div>

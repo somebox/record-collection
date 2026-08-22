@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}{{ current.name if current else "All" }} — Record Collection{% endblock %}
+{% block body %}
+<header class="topbar">
+  <h1><a href="{{ url_for('index') }}">Record Collection</a></h1>
+  <form class="searchbox" method="get">
+    <input type="search" name="q" value="{{ q }}" placeholder="search title, artist, style…">
+  </form>
+  <span class="meta">synced {{ last_sync|shortdate if last_sync else "never" }} · {{ total }} records</span>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="head">Folders</div>
+    <a class="folder {{ 'active' if not current }}" href="{{ url_for('folder_view', folder_id='all') }}">
+      <span><span class="swatch" style="background: #fff; border-style: dashed;"></span>All</span>
+      <span class="count">{{ total }}</span>
+    </a>
+    {% for f in folders if f.id != 1 %}
+    <a class="folder {{ 'active' if current and current.id == f.id }}" data-folder="{{ f.id }}"
+       href="{{ url_for('folder_view', folder_id=f.id) }}">
+      <span><span class="swatch" style="background: {{ f.id|folder_color }}"></span>{{ f.name }}</span>
+      <span class="count">{{ f.count }}</span>
+    </a>
+    {% endfor %}
+    {% for f in folders if f.id == 1 %}
+    <div class="uncat-block">
+      <a class="folder {{ 'active' if current and current.id == 1 }}" data-folder="1"
+         href="{{ url_for('folder_view', folder_id=1) }}">
+        <span><span class="swatch" style="background: {{ 1|folder_color }}"></span>{{ f.name }}</span>
+        <span class="count">{{ f.count }}</span>
+      </a>
+    </div>
+    {% endfor %}
+    <div class="newfolder">
+      <button type="button" id="new-folder">{{ icon("plus") }} New folder</button>
+    </div>
+  </nav>
+
+  <main class="content">
+    <div class="folderbar">
+      <h2>
+        {% if current %}<span class="swatch big" style="background: {{ current.id|folder_color }}"></span>{{ current.name }}
+        {% else %}All{% endif %}
+      </h2>
+      <span class="dim">
+        {{ stats.n }} records
+        {%- if top_genres %} · {{ top_genres|join(" / ") }}{% endif %}
+        {%- if stats.priced %} · est. value {{ stats.total|money }} ({{ stats.priced }} priced){% endif %}
+      </span>
+      <span class="spacer"></span>
+      {% if current %}
+      <button type="button" id="folder-details" data-url="{{ url_for('folder_details', folder_id=current.id) }}">{{ icon("info") }} Folder details</button>
+      {% endif %}
+    </div>
+
+    <div class="bulkbar" id="bulkbar" hidden>
+      <span id="bulk-count"></span>
+      <select id="bulk-action">
+        <option value="">action…</option>
+        <optgroup label="Move to folder">
+          {% for f in folders %}
+          <option value="move:{{ f.id }}">{{ f.name }}</option>
+          {% endfor %}
+        </optgroup>
+        <option value="print">Print sleeve labels</option>
+        <option value="enrich">Enrich with AI (generate + save)</option>
+        <option value="resync">Resync collection</option>
+      </select>
+      <button type="button" id="bulk-apply">{{ icon("check") }} Apply</button>
+      <span class="bulk-status dim"></span>
+    </div>
+
+    <table class="items">
+      {% macro sort_th(key, label, right=false) %}
+      <th {% if right %}style="text-align:right"{% endif %}>
+        <a class="sortlink {{ 'active' if sort == key }}"
+           href="?sort={{ key }}&dir={{ 'desc' if sort == key and direction == 'asc' else 'asc' }}&q={{ q }}">{{ label }}
+          {{ icon("up" if sort == key and direction == "asc" else ("down" if sort == key else "updown"), 11) }}</a>
+      </th>
+      {% endmacro %}
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="sel-all" title="select / deselect all"></th>
+          <th></th>
+          {{ sort_th("title", "Title") }}
+          {{ sort_th("artist", "Artist") }}
+          {{ sort_th("year", "Year") }}
+          <th>Folder</th>
+          <th>Style</th>
+          {{ sort_th("added", "Added") }}
+          <th>Notes</th>
+          {{ sort_th("price", "Price", right=true) }}
+        </tr>
+      </thead>
+      <tbody>
+        {% for i in items %}
+        <tr class="{{ 'uncat' if i.folder_id == 1 }}" data-instance="{{ i.instance_id }}">
+          <td><input type="checkbox" class="sel" data-instance="{{ i.instance_id }}"></td>
+          <td class="dragcell" draggable="true" title="drag to a folder">
+            {% if i.thumb_url %}<img class="thumb" src="{{ i.thumb_url }}" alt="" loading="lazy">{% else %}<span class="thumb noimg"></span>{% endif %}
+          </td>
+          <td class="title"><a href="{{ url_for('item_view', instance_id=i.instance_id) }}">{{ i.title }}</a></td>
+          <td>{{ i.artist }}</td>
+          <td class="num">{{ i.year or "" }}</td>
+          <td><a class="chip" style="background: {{ i.folder_id|folder_color }}"
+                 href="{{ url_for('folder_view', folder_id=i.folder_id) }}">{{ i.folder_name }}</a></td>
+          <td class="desc dim">{{ i.style or "" }}</td>
+          <td class="dim">{{ i.date_added|shortdate }}</td>
+          <td class="desc dim">{{ i.notes or "" }}</td>
+          <td class="num price" data-release="{{ i.release_id }}"
+              data-stale="{{ '1' if not i.price_fetched_at else '0' }}">{{ i.price|money }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="statusbar">
+      <span>{{ items|length }} records{% if current %} in {{ current.name }}{% endif %}{% if q %} matching “{{ q }}”{% endif %}</span>
+    </div>
+  </main>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <button type="button" class="modal-nav" id="modal-prev" aria-label="previous album" hidden>{{ icon("left", 22) }}</button>
+  <div class="modal-box">
+    <button type="button" class="modal-close" aria-label="close">{{ icon("x", 16) }}</button>
+    <div class="modal-body"></div>
+  </div>
+  <button type="button" class="modal-nav" id="modal-next" aria-label="next album" hidden>{{ icon("right", 22) }}</button>
+</div>
+{% endblock %}

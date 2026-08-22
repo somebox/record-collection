@@ -1,0 +1,12 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1200, "h": 800, "title": "Collection view" },
+    { "file": "ItemDetail.dc.html", "x": 1300, "y": 0, "w": 900, "h": 700, "title": "Item detail" },
+    { "file": "Labels.dc.html", "x": 1300, "y": 840, "w": 980, "h": 640, "title": "Print labels" }
+  ],
+  "annotations": [
+    { "id": "note-dragdrop", "x": 0, "y": -150, "w": 300, "text": "Collection view: drag a table row onto a folder to move it (dashed blue = drop target, faded row = being dragged). Changes push to Discogs immediately." },
+    { "id": "note-printer", "x": 2340, "y": 840, "w": 260, "text": "Labels render as PNGs and print directly to the Brother QL-710W (62mm roll) - no browser print dialog. QR links to the release / folder on Discogs." }
+  ],
+  "launch": { "view": "canvas" }
+}

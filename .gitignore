@@ -1,0 +1,22 @@
+# Secrets — never commit
+secrets.yaml
+*.secrets.yaml*
+*.un~
+.env
+
+# Data
+*.sqlite3
+*.sqlite3-*
+*.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Editors / OS
+.DS_Store
+*.swp
