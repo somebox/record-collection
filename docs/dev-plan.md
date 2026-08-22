@@ -1,8 +1,33 @@
 # Development plan
 
 High-level sequence. Each milestone ends in something usable.
-Status: all 6 milestones done (2026-08-22). Remaining: physical print calibration,
-bulk summarize/classify runs at the user's discretion.
+Status: all 6 milestones done (2026-08-22). Since then: collection fully enriched
+(268/268 Style+Summary), Uncategorized filed, rock split into subgenres, artist
+sections created, folder colors, paid prices, multi-select bulk actions, modal
+detail UX, variable-height labels, CSS baseline + styleguide. Published at
+github.com/somebox/record-collection.
+
+## What's left
+
+Blocked on hardware (the printer has not been connected yet):
+- Confirm the model via USB discovery (`records auth`) — likely QL-700; may need
+  a udev rule for non-root USB access on Linux.
+- First real prints: check 62mm sizing, margins, contrast, QR scan distance;
+  calibrate `SLEEVE_MIN/MAX_HEIGHT` and font sizes against the physical roll.
+- Then the big print run: dividers for every folder + 268 sleeve labels.
+
+Small operational items:
+- 1 record still Uncategorized (Charles Aznavour — no fitting folder).
+- No way to batch-print all dividers in one command (`--divider` is per folder).
+
+Accepted quality gaps (see docs/styleguide.md):
+- No modal focus trap; table rows not keyboard-focusable; no mobile layout.
+- No tests (sync edge cases — moves/removals/field changes — are untested).
+- App-local data (paid prices, folder colors) lives only in records.sqlite3 —
+  no export/backup command.
+
+Deliberately cut (revisit only if needed): offline edit queue, incremental sync,
+per-condition price suggestions, browser label printing, multi-user/auth.
 
 ## 1. Foundation ✓
 - `uv` project scaffold, `pyproject.toml`, config loading (`secrets.yaml`).
