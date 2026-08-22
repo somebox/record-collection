@@ -226,7 +226,9 @@ def cmd_labels(args: argparse.Namespace) -> int:
     else:
         folder = find_folder(args.sleeves)
         rows = conn.execute(
-            "SELECT * FROM items WHERE folder_id = ? ORDER BY artist, year", (folder["id"],)
+            "SELECT i.*, p.country FROM items i LEFT JOIN prices p ON p.release_id = i.release_id "
+            "WHERE i.folder_id = ? ORDER BY i.artist, i.year",
+            (folder["id"],),
         ).fetchall()
         for row in rows:
             item = dict(row)

@@ -4,7 +4,7 @@
     {% if item.cover_url %}<img class="cover" src="{{ item.cover_url }}" alt="">{% endif %}
     <h2>{{ item.title }}</h2>
     <div class="dim">{{ item.artist }}{% if item.year %} · {{ item.year }}{% endif %}</div>
-    <div class="dim">{{ item.label }}{% if item.catno %} · {{ item.catno }}{% endif %}</div>
+    <div class="dim">{{ item.label }}{% if item.catno %} · {{ item.catno }}{% endif %}{% if item.country %} · {{ item.country }}{% endif %}</div>
     <p class="dim meta-block">
       added {{ item.date_added|shortdate }}<br>
       {% if item.price is not none %}discogs price {{ item.price|money }}<br>{% endif %}

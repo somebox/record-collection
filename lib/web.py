@@ -175,7 +175,7 @@ def folder_view(folder_id):
 def item_view(instance_id):
     conn = get_conn()
     item = conn.execute(
-        """SELECT i.*, f.name AS folder_name, p.price, pu.paid_price FROM items i
+        """SELECT i.*, f.name AS folder_name, p.price, p.country, pu.paid_price FROM items i
            JOIN folders f ON f.id = i.folder_id
            LEFT JOIN prices p ON p.release_id = i.release_id
            LEFT JOIN purchases pu ON pu.instance_id = i.instance_id
@@ -202,13 +202,16 @@ def price(release_id):
     release = get_discogs().release(release_id)
     with conn:
         conn.execute(
-            "INSERT INTO prices (release_id, price, num_for_sale, fetched_at) VALUES (?, ?, ?, ?) "
+            "INSERT INTO prices (release_id, price, num_for_sale, country, fetched_at) "
+            "VALUES (?, ?, ?, ?, ?) "
             "ON CONFLICT(release_id) DO UPDATE SET price = excluded.price, "
-            "num_for_sale = excluded.num_for_sale, fetched_at = excluded.fetched_at",
+            "num_for_sale = excluded.num_for_sale, country = excluded.country, "
+            "fetched_at = excluded.fetched_at",
             (
                 release_id,
                 release.get("lowest_price"),
                 release.get("num_for_sale"),
+                release.get("country"),
                 datetime.now(timezone.utc).isoformat(timespec="seconds"),
             ),
         )
@@ -424,6 +427,10 @@ def _sleeve_image(conn, instance_id: int, include_paid: bool = False):
     from lib import labels
 
     item = dict(_require_item(conn, instance_id))
+    release = conn.execute(
+        "SELECT country FROM prices WHERE release_id = ?", (item["release_id"],)
+    ).fetchone()
+    item["country"] = release["country"] if release else None
     if include_paid:
         row = conn.execute(
             "SELECT paid_price FROM purchases WHERE instance_id = ?", (instance_id,)

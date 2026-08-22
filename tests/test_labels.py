@@ -61,6 +61,10 @@ def test_paid_price_joins_provenance():
     assert with_paid.tobytes() != without.tobytes()
 
 
+def test_country_appears_on_byline():
+    assert sleeve(country="US").tobytes() != sleeve(country=None).tobytes()
+
+
 def test_save_pdf(tmp_path):
     path = tmp_path / "out.pdf"
     labels.save_pdf([sleeve(), sleeve(title="Second")], path)

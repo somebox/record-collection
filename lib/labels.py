@@ -140,7 +140,11 @@ def render_sleeve(item: dict, qr_url: str, include_paid: bool = False) -> Image.
         y += title_font.size + 8
     y += 4
 
-    byline = item["artist"] + (f" · {item['year']}" if item.get("year") else "")
+    byline = item["artist"]
+    if item.get("year"):
+        byline += f" · {item['year']}"
+    if item.get("country"):
+        byline += f" · {item['country']}"
     byline_font, byline_lines = _fit_or_wrap(draw, byline, "regular", 40, 28, text_width)
     for line in byline_lines:
         draw.text((MARGIN, y), line, font=byline_font, fill=0)

@@ -34,11 +34,12 @@ CREATE TABLE IF NOT EXISTS items (
 );
 CREATE INDEX IF NOT EXISTS idx_items_folder ON items(folder_id);
 
--- App-local price cache; survives collection resyncs.
+-- App-local release-level cache (price + pressing country); survives resyncs.
 CREATE TABLE IF NOT EXISTS prices (
     release_id INTEGER PRIMARY KEY,
     price REAL,
     num_for_sale INTEGER,
+    country TEXT,
     fetched_at TEXT NOT NULL
 );
 
@@ -59,10 +60,11 @@ def connect() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
-    cols = [r["name"] for r in conn.execute("PRAGMA table_info(folders)")]
-    if "color" not in cols:
-        with conn:
-            conn.execute("ALTER TABLE folders ADD COLUMN color TEXT")
+    for table, column in (("folders", "color"), ("prices", "country")):
+        cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({table})")]
+        if column not in cols:
+            with conn:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
     return conn
 
 
