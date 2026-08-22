@@ -4,6 +4,11 @@ secrets.yaml
 *.un~
 .env
 
+# Per-machine config and output
+settings.yaml
+labels-pdf/
+backup-*.json
+
 # Data
 *.sqlite3
 *.sqlite3-*

@@ -229,13 +229,15 @@ def _username(conn) -> str:
     return username
 
 
-@app.errorhandler(Exception)
-def api_error(exc):
-    from lib.discogs import DiscogsError
-
-    if isinstance(exc, DiscogsError) and request.path.startswith("/api/"):
+def _handle_discogs_error(exc):
+    if request.path.startswith("/api/"):
         return jsonify({"error": str(exc)}), 502
     raise exc
+
+
+from lib.discogs import DiscogsError  # noqa: E402
+
+app.register_error_handler(DiscogsError, _handle_discogs_error)
 
 
 @app.post("/api/move")
@@ -376,15 +378,17 @@ def api_delete_folder(folder_id):
 
 @app.post("/api/suggest_folder")
 def api_suggest_folder():
-    from lib.ai import AIError, OpenRouterClient, classify_item
+    from lib.ai import AIError, classify_item
 
+    client = _ai_client()
+    if client is None:
+        return jsonify({"error": "no OpenRouter key in secrets.yaml — AI features are disabled"}), 503
     conn = get_conn()
     item = dict(_require_item(conn, int(request.get_json()["instance_id"])))
     folders = {
         f["name"]: f["id"]
         for f in conn.execute("SELECT * FROM folders WHERE id != ?", (UNCATEGORIZED_ID,))
     }
-    client = OpenRouterClient(config.load_secrets()["openrouter_key"])
     try:
         result = classify_item(client, item, list(folders))
     except AIError as e:
@@ -453,16 +457,26 @@ def api_sync():
     return jsonify({"ok": True, **result})
 
 
+def _ai_client():
+    """None when no OpenRouter key is configured — AI features are optional."""
+    from lib.ai import OpenRouterClient
+
+    key = config.load_secrets().get("openrouter_key")
+    return OpenRouterClient(key) if key else None
+
+
 @app.post("/api/generate")
 def api_generate():
     """Draft style + summary for an item. Returns the draft only — the user
     reviews it in the edit fields and saves explicitly."""
-    from lib.ai import AIError, OpenRouterClient, summarize_item
+    from lib.ai import AIError, summarize_item
 
+    client = _ai_client()
+    if client is None:
+        return jsonify({"error": "no OpenRouter key in secrets.yaml — AI features are disabled"}), 503
     conn = get_conn()
     item = dict(_require_item(conn, int(request.get_json()["instance_id"])))
     release_notes = (get_discogs().release(item["release_id"]).get("notes") or "").strip()
-    client = OpenRouterClient(config.load_secrets()["openrouter_key"])
     try:
         draft = summarize_item(client, item, release_notes or None)
     except AIError as e:
@@ -508,9 +522,18 @@ def api_print():
         images = [_sleeve_image(conn, i) for i in ids]
     else:
         abort(400, "unknown label type")
-    model = db.get_setting(conn, "printer_model") or "QL-700"
+
+    settings = config.load_settings()
+    if settings["label_output"] == "pdf":
+        from datetime import datetime
+
+        pdf_dir = config.ROOT / settings["pdf_dir"]
+        pdf_dir.mkdir(parents=True, exist_ok=True)
+        path = pdf_dir / f"labels-{datetime.now():%Y%m%d-%H%M%S}.pdf"
+        labels.save_pdf(images, path)
+        return jsonify({"ok": True, "printed": len(images), "pdf": str(path)})
     try:
-        labels.print_images(images, model=model)
+        labels.print_images(images, model=settings["printer_model"])
     except labels.PrintError as e:
         return jsonify({"error": str(e)}), 503
     return jsonify({"ok": True, "printed": len(images)})

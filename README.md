@@ -1,100 +1,84 @@
 # Record Collection
 
-A local tool for keeping a physical record collection in sync with
-[Discogs](https://www.discogs.com). Each Discogs folder corresponds to a divider in a
-crate; each record gets a printed sleeve label. A CLI (`records`) syncs the collection
-into SQLite, a small web app handles browsing and reorganizing, and labels print
-directly on a Brother QL printer.
+Keeps a physical record collection in sync with [Discogs](https://www.discogs.com).
+Each Discogs folder maps to a divider in a crate; each record gets a printed sleeve
+label. A CLI syncs the collection into SQLite, a local web app handles browsing and
+reorganizing, and labels print on a Brother QL label printer — or to PDF.
 
 ![Collection view](docs/images/collection.png)
 
-## What it does
+## Features
 
-- **Sync**: pulls folders, items, and custom fields (Style, Summary, Notes,
-  media/sleeve condition) from Discogs into a local SQLite mirror. Edits made in the
-  app write back to Discogs immediately; Discogs stays the source of truth.
-- **Browse and organize**: folder sidebar, sortable table, search. Drag a record's
-  cover onto a folder to move it. Folders can be created, renamed, deleted (items are
-  relocated first), and color-coded. Multi-select supports bulk moves, printing, and
+- **Sync** — the collection, folders, and custom fields (style, summary, notes,
+  condition) mirror into a local database. Edits write back to Discogs immediately.
+- **Organize** — drag a record's cover onto a folder to move it. Create, rename,
+  delete, and color-code folders. Multi-select for bulk moves, printing, and
   AI enrichment.
-- **Labels**: divider labels (folder name, genres, QR code to the folder on Discogs)
-  and sleeve labels (title, artist, year, style, summary, notes, QR code to the
-  release). Rendered as PNGs and sent straight to a Brother QL over USB — no printer
-  driver. Optionally includes the purchase price, which is stored locally and never
-  sent to Discogs.
-- **AI assistance** (via OpenRouter): drafts the Style and Summary fields from Discogs
-  release notes or a web search, suggests a folder for a record, and can file an
-  entire uncategorized backlog. Single-item drafts require explicit approval before
-  saving; bulk enrichment saves directly.
+- **Labels** — divider labels per folder and sleeve labels per record, with QR codes
+  linking back to Discogs. Printed over USB (no driver needed) or written to PDF.
+- **AI** *(optional)* — drafts the style and summary fields, suggests folders, and
+  can file an entire uncategorized backlog. Without an OpenRouter key the app works
+  normally and these features are simply disabled.
 
-| Sleeve label | Divider label |
+| Record details | Labels |
 |---|---|
-| ![Sleeve label](docs/images/label-sleeve.png) | ![Divider label](docs/images/label-divider.png) |
+| ![Item modal](docs/images/item-modal.png) | ![Sleeve label](docs/images/label-sleeve.png) ![Divider label](docs/images/label-divider.png) |
 
 ## Setup
 
-Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
+1. Install [uv](https://docs.astral.sh/uv/) and clone this repo.
+2. Get a [Discogs personal access token](https://www.discogs.com/settings/developers).
+3. Optional, for the AI features: an [OpenRouter API key](https://openrouter.ai/keys).
+4. Create your config:
+
+   ```sh
+   cp secrets.example.yaml secrets.yaml    # add your token(s)
+   uv sync
+   ```
+
+5. Verify and pull your collection:
+
+   ```sh
+   uv run records auth
+   uv run records sync
+   uv run records serve    # → http://127.0.0.1:5033
+   ```
+
+To change the printer model or switch label output to PDF, copy
+`settings.example.yaml` to `settings.yaml` and edit it.
+
+## Commands
 
 ```sh
-cp secrets.example.yaml secrets.yaml
-uv sync
+records sync                       # pull the collection from Discogs
+records serve                      # start the web app
+records labels --divider jazz      # print one divider ('all' for every folder)
+records labels --sleeves jazz      # print sleeve labels for a folder
+records labels --divider all --pdf out.pdf   # PDF instead of the printer
+records summarize --missing        # AI-draft style/summary (add --write to save)
+records classify --apply           # AI-file uncategorized records into folders
+records backup                     # export paid prices + folder colors to JSON
+records restore backup.json
 ```
 
-`secrets.yaml` needs two keys:
-
-- `discogs_pat` — a [Discogs personal access token](https://www.discogs.com/settings/developers)
-- `openrouter_key` — an [OpenRouter API key](https://openrouter.ai/keys) (only needed
-  for the AI features)
-
-## Usage
-
-```sh
-uv run records auth      # verify both keys, detect the printer
-uv run records sync      # pull the collection into records.sqlite3
-uv run records serve     # web app at http://127.0.0.1:5033
-```
-
-Labels, from the CLI or the web app:
-
-```sh
-uv run records labels --divider jazz             # print one divider label
-uv run records labels --sleeves jazz             # print sleeve labels for a folder
-uv run records labels --sleeves jazz --out /tmp  # write PNGs instead of printing
-```
-
-AI drafting and classification:
-
-```sh
-uv run records summarize --missing               # draft Style/Summary (dry run)
-uv run records summarize --missing --write       # ...and save to Discogs
-uv run records classify                          # suggest folders for Uncategorized
-uv run records classify --apply                  # ...and move the records
-uv run records classify --review jazz            # flag records that may not fit
-```
-
-![Item detail](docs/images/item.png)
+![Folder modal](docs/images/folder-modal.png)
 
 ## Notes
 
-- The Discogs API is rate-limited to 60 requests/minute; the client throttles
-  accordingly. A full sync of ~270 records takes a few seconds; bulk enrichment of a
-  whole collection takes half an hour.
-- Sleeve and divider labels are sized for a 62mm continuous roll (DK-22205) at
-  300 dpi. Supported printers are the Brother QL series, via
-  [brother-ql-next](https://pypi.org/project/brother-ql-next/).
-- Folder QR codes link to the folder-filtered collection on discogs.com. The Discogs
-  mobile app cannot deep-link into a filtered folder view; opening the link in a
-  mobile browser works.
-- Prices shown are Discogs lowest-listed prices, fetched lazily and cached for a
-  week. Purchase prices live only in the local database.
-- The web app binds to localhost and has no authentication; it is intended for
-  single-user use on a private machine.
+- Discogs is the source of truth. The app never queues offline edits — if Discogs
+  is unreachable, an edit fails visibly.
+- Labels are sized for a 62 mm continuous roll at 300 dpi and grow in length to fit
+  their text. PDF output keeps the same physical size, one label per page.
+- Prices in the table are Discogs lowest-listed prices, cached for a week.
+  Purchase prices you enter stay local and are never sent to Discogs —
+  `records backup` exports them.
+- The web app binds to localhost with no authentication: single user, private machine.
 
-## Docs
+## Development
 
-- [docs/spec.md](docs/spec.md) — features and components
-- [docs/dev-plan.md](docs/dev-plan.md) — development plan
-- [docs/api-notes.md](docs/api-notes.md) — Discogs/OpenRouter/printer findings
+`uv run pytest` runs the test suite. See [docs/spec.md](docs/spec.md) for the
+architecture, [docs/styleguide.md](docs/styleguide.md) for frontend conventions,
+and [docs/api-notes.md](docs/api-notes.md) for Discogs/OpenRouter/printer details.
 
 ## License
 

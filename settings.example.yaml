@@ -1,0 +1,4 @@
+# Optional — copy to settings.yaml to change defaults.
+printer_model: QL-700     # your Brother QL model
+label_output: printer     # "printer" (Brother QL over USB) or "pdf"
+pdf_dir: labels-pdf       # where PDFs are written when label_output is "pdf"

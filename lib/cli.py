@@ -24,13 +24,16 @@ def cmd_auth(args: argparse.Namespace) -> int:
         print(f"✘ discogs: {e}")
         ok = False
 
-    try:
-        ai = OpenRouterClient(secrets["openrouter_key"])
-        reply = ai.complete("Reply with exactly: OK", max_tokens=500)
-        print(f"✔ openrouter: {ai.model} replied ({reply[:40]})")
-    except AIError as e:
-        print(f"✘ openrouter: {e}")
-        ok = False
+    if secrets.get("openrouter_key"):
+        try:
+            ai = OpenRouterClient(secrets["openrouter_key"])
+            reply = ai.complete("Reply with exactly: OK", max_tokens=500)
+            print(f"✔ openrouter: {ai.model} replied ({reply[:40]})")
+        except AIError as e:
+            print(f"✘ openrouter: {e}")
+            ok = False
+    else:
+        print("– openrouter: no key in secrets.yaml — AI features disabled")
 
     printers = discover()
     if printers:
@@ -71,6 +74,8 @@ def cmd_summarize(args: argparse.Namespace) -> int:
     from lib.sync import FIELD_STYLE, FIELD_SUMMARY
 
     secrets = config.load_secrets()
+    if not secrets.get("openrouter_key"):
+        sys.exit("no OpenRouter key in secrets.yaml — AI features are disabled")
     conn = db.connect()
     username = db.get_setting(conn, "username")
     if not username:
@@ -124,6 +129,8 @@ def cmd_classify(args: argparse.Namespace) -> int:
     from lib.discogs import DiscogsClient
 
     secrets = config.load_secrets()
+    if not secrets.get("openrouter_key"):
+        sys.exit("no OpenRouter key in secrets.yaml — AI features are disabled")
     conn = db.connect()
     client = OpenRouterClient(secrets["openrouter_key"])
     discogs = DiscogsClient(secrets["discogs_pat"]) if args.apply else None
@@ -177,34 +184,47 @@ def cmd_classify(args: argparse.Namespace) -> int:
 
 
 def cmd_labels(args: argparse.Namespace) -> int:
+    from datetime import datetime
+    from pathlib import Path
+
     from lib import db, labels
+    from lib.web import app, folder_stats
 
     conn = db.connect()
     username = db.get_setting(conn, "username")
     if not username:
         sys.exit("run `records sync` first")
 
-    name = args.divider or args.sleeves
-    folder = conn.execute(
-        "SELECT * FROM folders WHERE name = ? COLLATE NOCASE OR id = ?",
-        (name, name if name.isdigit() else -1),
-    ).fetchone()
-    if folder is None:
-        sys.exit(f"no folder named '{name}'")
-
-    images = []
-    if args.divider:
-        from lib.web import app, folder_stats
-
+    def divider_image(folder):
         with app.app_context():
             _stats, top_genres = folder_stats(conn, folder["id"])
-        genre_line = " · ".join(top_genres)
         qr = f"https://www.discogs.com/user/{username}/collection?folder={folder['id']}"
-        images.append((
-            f"divider-{folder['name']}",
-            labels.render_divider(folder["name"], genre_line, qr, folder_id=folder["id"]),
-        ))
+        return labels.render_divider(
+            folder["name"], " · ".join(top_genres), qr, folder_id=folder["id"]
+        )
+
+    def find_folder(name):
+        folder = conn.execute(
+            "SELECT * FROM folders WHERE name = ? COLLATE NOCASE OR id = ?",
+            (name, name if name.isdigit() else -1),
+        ).fetchone()
+        if folder is None:
+            sys.exit(f"no folder named '{name}'")
+        return folder
+
+    images = []
+    if args.divider == "all":
+        folders = conn.execute(
+            "SELECT f.* FROM folders f WHERE (SELECT count(*) FROM items i "
+            "WHERE i.folder_id = f.id) > 0 ORDER BY f.name COLLATE NOCASE"
+        ).fetchall()
+        for folder in folders:
+            images.append((f"divider-{folder['name']}", divider_image(folder)))
+    elif args.divider:
+        folder = find_folder(args.divider)
+        images.append((f"divider-{folder['name']}", divider_image(folder)))
     else:
+        folder = find_folder(args.sleeves)
         rows = conn.execute(
             "SELECT * FROM items WHERE folder_id = ? ORDER BY artist, year", (folder["id"],)
         ).fetchall()
@@ -213,19 +233,79 @@ def cmd_labels(args: argparse.Namespace) -> int:
             qr = f"https://www.discogs.com/release/{item['release_id']}"
             images.append((f"sleeve-{item['instance_id']}", labels.render_sleeve(item, qr)))
 
+    if not images:
+        sys.exit("nothing to render")
+    settings = config.load_settings()
+
     if args.out:
-        outdir = __import__("pathlib").Path(args.out)
+        outdir = Path(args.out)
         outdir.mkdir(parents=True, exist_ok=True)
         for name_, img in images:
             img.save(outdir / f"{name_}.png")
         print(f"✔ wrote {len(images)} label(s) to {outdir}/")
+    elif args.pdf or settings["label_output"] == "pdf":
+        path = Path(args.pdf) if args.pdf else (
+            config.ROOT / settings["pdf_dir"] / f"labels-{datetime.now():%Y%m%d-%H%M%S}.pdf"
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        labels.save_pdf([img for _, img in images], path)
+        print(f"✔ wrote {len(images)} label(s) to {path}")
     else:
-        model = db.get_setting(conn, "printer_model") or "QL-700"
         try:
-            labels.print_images([img for _, img in images], model=model)
+            labels.print_images([img for _, img in images], model=settings["printer_model"])
         except labels.PrintError as e:
-            sys.exit(f"print failed: {e} (use --out DIR to write PNGs instead)")
+            sys.exit(f"print failed: {e} (use --pdf FILE or --out DIR instead)")
         print(f"✔ printed {len(images)} label(s)")
+    return 0
+
+
+def cmd_backup(args: argparse.Namespace) -> int:
+    """Export the app-local data Discogs can't restore: paid prices, folder colors."""
+    import json
+    from datetime import datetime, timezone
+
+    from lib import db
+
+    conn = db.connect()
+    data = {
+        "exported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "purchases": {
+            str(r["instance_id"]): r["paid_price"]
+            for r in conn.execute("SELECT * FROM purchases")
+        },
+        "folder_colors": {
+            str(r["id"]): r["color"]
+            for r in conn.execute("SELECT id, color FROM folders WHERE color IS NOT NULL")
+        },
+    }
+    out = args.out or f"backup-{datetime.now():%Y%m%d}.json"
+    with open(out, "w") as f:
+        json.dump(data, f, indent=2)
+    print(f"✔ {len(data['purchases'])} paid price(s), {len(data['folder_colors'])} color(s) → {out}")
+    return 0
+
+
+def cmd_restore(args: argparse.Namespace) -> int:
+    import json
+
+    from lib import db
+
+    with open(args.file) as f:
+        data = json.load(f)
+    conn = db.connect()
+    with conn:
+        for instance_id, price in data.get("purchases", {}).items():
+            conn.execute(
+                "INSERT INTO purchases (instance_id, paid_price) VALUES (?, ?) "
+                "ON CONFLICT(instance_id) DO UPDATE SET paid_price = excluded.paid_price",
+                (int(instance_id), price),
+            )
+        for folder_id, color in data.get("folder_colors", {}).items():
+            conn.execute("UPDATE folders SET color = ? WHERE id = ?", (color, int(folder_id)))
+    print(
+        f"✔ restored {len(data.get('purchases', {}))} paid price(s), "
+        f"{len(data.get('folder_colors', {}))} color(s) from {args.file}"
+    )
     return 0
 
 
@@ -260,10 +340,19 @@ def main() -> None:
 
     p_labels = sub.add_parser("labels", help="print or export labels")
     group = p_labels.add_mutually_exclusive_group(required=True)
-    group.add_argument("--divider", metavar="FOLDER", help="divider label for a folder (name or id)")
+    group.add_argument("--divider", metavar="FOLDER", help="divider label for a folder (name, id, or 'all')")
     group.add_argument("--sleeves", metavar="FOLDER", help="sleeve labels for every item in a folder")
     p_labels.add_argument("--out", metavar="DIR", help="write PNGs here instead of printing")
+    p_labels.add_argument("--pdf", metavar="FILE", help="write a PDF (one label per page) instead of printing")
     p_labels.set_defaults(func=cmd_labels)
+
+    p_backup = sub.add_parser("backup", help="export app-local data (paid prices, folder colors)")
+    p_backup.add_argument("--out", metavar="FILE")
+    p_backup.set_defaults(func=cmd_backup)
+
+    p_restore = sub.add_parser("restore", help="restore app-local data from a backup file")
+    p_restore.add_argument("file")
+    p_restore.set_defaults(func=cmd_restore)
 
     p_serve = sub.add_parser("serve", help="start the web app")
     p_serve.add_argument("--port", type=int, default=5033)

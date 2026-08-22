@@ -43,18 +43,19 @@ Shared code used by both CLI and web app:
 
 argparse, stdlib — no CLI framework.
 
-- `records auth` — verify Discogs identity and OpenRouter key.
+- `records auth` — verify Discogs (and OpenRouter, if configured); detect printer.
 - `records sync` — full pull from Discogs.
 - `records serve` — start the web app.
-- `records labels --divider FOLDER | --sleeves FOLDER` — print labels.
-- `records summarize [--missing]` — AI Summary/Style drafts; `--write` pushes
-  accepted drafts to Discogs.
-- `records classify` — AI folder suggestions (default: Uncategorized) or
-  `--review FOLDER` to flag misfits.
+- `records labels --divider FOLDER|all | --sleeves FOLDER` — print labels;
+  `--pdf FILE` or `--out DIR` write files instead.
+- `records summarize [--missing] [--write]` — AI Style/Summary drafts.
+- `records classify [--apply] [--review FOLDER]` — AI folder suggestions.
+- `records backup / restore` — export and re-import app-local data
+  (paid prices, folder colors).
 
 ### 3. Web app
 
-Flask + Jinja templates, one vendored JS file (SortableJS) for drag & drop.
+Flask + Jinja templates, vanilla JS (native HTML5 drag & drop).
 No build step, localhost only.
 
 - **Collection view** — folder sidebar with counts; item table: cover thumb, title,
@@ -67,14 +68,16 @@ No build step, localhost only.
 
 Wireframe: see the published design canvas (docs/wireframe/).
 
-### 4. Labels (Brother QL, USB)
+### 4. Labels (Brother QL over USB, or PDF)
 
 - Printed via **`brother-ql-next`** (maintained fork of `brother_ql`, no driver
-  needed) over **USB** (`pyusb`). The printer is not wireless — likely a QL-700;
-  exact model is confirmed at setup (`records auth` reports it via discovery)
-  and stored as config, since all QL models share the raster protocol.
-- Labels are Pillow-rendered PNGs on 62mm continuous roll (DK-22205), pure
-  black & white (thermal printers are monochrome — no grayscale, no dithering).
+  needed) over **USB** (`pyusb`). The model name lives in `settings.yaml`
+  (default QL-700); `records auth` reports what USB discovery finds.
+- Alternatively `label_output: pdf` in `settings.yaml` (or `--pdf`) writes a PDF,
+  one label per page at true size, for laser printers or print shops.
+- Labels are Pillow-rendered PNGs for a 62mm continuous roll (DK-22205), pure
+  black & white. Length along the tape is variable: labels grow to fit wrapped
+  titles and long summaries instead of shrinking text below legibility.
 - **Design language**: sans-serif throughout; *italics* for descriptive text
   (summary, notes); large bold type for divider titles.
   - **Divider**: folder name in large bold caps, genre line small, QR → folder
@@ -85,8 +88,10 @@ Wireframe: see the published design canvas (docs/wireframe/).
 - The web app follows the same aesthetic: black & white, sans-serif, italic
   descriptions — the screen looks like the labels.
 
-### 5. AI assist (OpenRouter)
+### 5. AI assist (OpenRouter — optional)
 
+- Everything here requires an `openrouter_key` in `secrets.yaml`; without one the
+  rest of the app works normally and AI actions report themselves disabled.
 - Summaries from Discogs release notes; `:online` web-search fallback when the
   release has no notes. Output constrained to short, label-friendly text.
 - Style: short comma-separated descriptors ("ambient, quiet, minimalist").
@@ -108,7 +113,9 @@ Python 3.12+ managed with `uv`. Dependencies (deliberately few):
 | `pyusb` | USB backend for the printer |
 | `segno` | QR codes |
 
-stdlib: `sqlite3`, `argparse`. Frontend: Jinja + vendored SortableJS, no build.
+stdlib: `sqlite3`, `argparse`. Frontend: Jinja + vanilla JS (native drag & drop),
+no build step. Dev: `pytest`. Config: `secrets.yaml` (keys) + optional
+`settings.yaml` (printer model, label output).
 
 ## Cut for simplicity (revisit only if needed)
 

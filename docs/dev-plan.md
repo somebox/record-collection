@@ -18,13 +18,13 @@ Blocked on hardware (the printer has not been connected yet):
 
 Small operational items:
 - 1 record still Uncategorized (Charles Aznavour — no fitting folder).
-- No way to batch-print all dividers in one command (`--divider` is per folder).
 
 Accepted quality gaps (see docs/styleguide.md):
 - No modal focus trap; table rows not keyboard-focusable; no mobile layout.
-- No tests (sync edge cases — moves/removals/field changes — are untested).
-- App-local data (paid prices, folder colors) lives only in records.sqlite3 —
-  no export/backup command.
+
+Done since: `--divider all` batch printing, PDF label output + settings.yaml,
+`records backup`/`restore` for app-local data, OpenRouter made optional,
+pytest suite (labels, sync, web API).
 
 Deliberately cut (revisit only if needed): offline edit queue, incremental sync,
 per-condition price suggestions, browser label printing, multi-user/auth.

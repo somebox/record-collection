@@ -181,6 +181,12 @@ def render_sleeve(item: dict, qr_url: str, include_paid: bool = False) -> Image.
     return img.crop((0, 0, WIDTH, height))
 
 
+def save_pdf(images: list[Image.Image], path) -> None:
+    """One label per page, at true physical size (labels render at 300 dpi)."""
+    pages = [img.convert("L") for img in images]
+    pages[0].save(path, save_all=True, append_images=pages[1:], resolution=300)
+
+
 def print_images(images: list[Image.Image], model: str = "QL-700") -> None:
     """Send images to the first Brother QL found on USB."""
     from brother_ql.backends.helpers import send
