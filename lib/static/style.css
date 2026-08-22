@@ -102,6 +102,7 @@ a { color: var(--ink); }
 .folderbar h2 { margin: 0; font-size: 20px; font-weight: 700; }
 .folderbar .spacer { flex-grow: 1; }
 
+.bulkbar[hidden] { display: none; }
 .bulkbar {
   display: flex;
   align-items: center;
