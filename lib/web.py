@@ -171,6 +171,38 @@ def folder_view(folder_id):
     )
 
 
+@app.route("/crate")
+def crate_view():
+    """Flip-through view: dividers + albums in physical crate order."""
+    conn = get_conn()
+    folders, total = folder_list(conn)
+    ordered = [f for f in folders if f["id"] != UNCATEGORIZED_ID] + [
+        f for f in folders if f["id"] == UNCATEGORIZED_ID
+    ]
+    start_folder = request.args.get("folder", type=int)
+    entries, start_index = [], 0
+    for f in ordered:
+        items = conn.execute(
+            "SELECT instance_id, title, artist, year, cover_url FROM items "
+            "WHERE folder_id = ? ORDER BY artist, year",
+            (f["id"],),
+        ).fetchall()
+        if not items:
+            continue
+        if f["id"] == start_folder:
+            start_index = len(entries)
+        entries.append({
+            "type": "divider", "folder_id": f["id"], "name": f["name"],
+            "count": len(items), "color": folder_color(f["id"]),
+        })
+        for it in items:
+            entries.append({
+                "type": "album", "instance_id": it["instance_id"], "title": it["title"],
+                "artist": it["artist"], "year": it["year"], "cover": it["cover_url"],
+            })
+    return render_template("crate.html", entries=entries, start_index=start_index)
+
+
 @app.route("/item/<int:instance_id>")
 def item_view(instance_id):
     conn = get_conn()

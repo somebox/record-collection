@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+{% block title %}Crate — Record Collection{% endblock %}
+{% block body %}
+<header class="topbar">
+  <h1><a href="{{ url_for('index') }}">Record Collection</a></h1>
+  <span class="crate-info dim" id="crate-info" aria-live="polite"></span>
+  <span class="meta"><a class="btn" href="{{ url_for('index') }}">{{ icon("x", 12) }} Exit crate</a></span>
+</header>
+
+<div class="crate">
+  <div class="crate-tabs" id="crate-tabs"></div>
+  <div class="crate-stage" id="crate-stage"></div>
+  <button type="button" class="crate-backstrip btn-plain" id="crate-back">{{ icon("left") }} back</button>
+</div>
+
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-label="details" hidden>
+  <button type="button" class="modal-nav btn-plain" id="modal-prev" aria-label="previous album" hidden>{{ icon("left", 28) }}</button>
+  <div class="modal-box">
+    <button type="button" class="modal-close btn-plain" aria-label="close">{{ icon("x", 16) }}</button>
+    <div class="modal-body"></div>
+  </div>
+  <button type="button" class="modal-nav btn-plain" id="modal-next" aria-label="next album" hidden>{{ icon("right", 28) }}</button>
+</div>
+
+<script type="application/json" id="crate-data">{{ {"entries": entries, "start": start_index}|tojson }}</script>
+<script src="{{ url_for('static', filename='crate.js') }}" defer></script>
+{% endblock %}

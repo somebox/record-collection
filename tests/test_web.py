@@ -80,6 +80,14 @@ def test_label_previews_render(client):
     assert resp.mimetype == "image/png"
 
 
+def test_crate_view(client):
+    resp = client.get("/crate")
+    assert resp.status_code == 200
+    assert b"crate-data" in resp.data
+    assert b'"type": "divider"' in resp.data
+    assert b"Kind Of Blue" in resp.data
+
+
 def test_folder_color_filter_is_deterministic(client):
     from lib.web import app, folder_color
 

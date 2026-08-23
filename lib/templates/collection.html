@@ -8,6 +8,7 @@
     <input type="search" name="q" value="{{ q }}" placeholder="search title, artist, style…"
            aria-label="search collection">
   </form>
+  <a class="btn topbar-btn" href="{{ url_for('crate_view') }}{% if current %}?folder={{ current.id }}{% endif %}">Crate view</a>
   <span class="meta">synced {{ last_sync|shortdate if last_sync else "never" }} · {{ total }} records
     <button type="button" id="sync-now">{{ icon("sync") }} Sync</button>
   </span>
