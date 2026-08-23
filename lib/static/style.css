@@ -394,18 +394,22 @@ img.labelpreview {
 }
 .crate-tab-current { font-weight: 700; }
 
+.crate { --crate-w: min(74vw, 1100px); }
 .crate-stage {
   position: relative;
   flex: 1 1 0;
   min-height: 0;
-  width: min(58vh, 560px);
+  width: var(--crate-w);
   margin: 10px 0 0;
-  perspective: 1200px;
+  perspective: 1400px;
   cursor: pointer;
+  overflow: hidden;  /* head-on view: the lower part of the record sits in the crate */
 }
 .crate-card {
   position: absolute;
-  inset: auto 0 4%;
+  top: 15%;
+  left: 0;
+  right: 0;
   aspect-ratio: 1 / 1;
   background: var(--paper);
   border: 2px solid var(--ink);
@@ -413,19 +417,16 @@ img.labelpreview {
   transition: transform 0.24s ease, opacity 0.24s ease, filter 0.24s ease;
 }
 .crate-card:not(.depth-0) { transform-origin: top center; }
-.crate-card.depth-1 { transform: translateY(-3.5%) scale(0.96); filter: brightness(0.88); }
-.crate-card.depth-2 { transform: translateY(-7%) scale(0.92); filter: brightness(0.76); }
-.crate-card.depth-3 { transform: translateY(-10%) scale(0.88); filter: brightness(0.64); }
-.crate-card.depth-4 { transform: translateY(-12.5%) scale(0.84); filter: brightness(0.52); }
+.crate-card.depth-1 { transform: translateY(-2.5%) scale(0.97); filter: brightness(0.88); }
+.crate-card.depth-2 { transform: translateY(-4.8%) scale(0.94); filter: brightness(0.76); }
+.crate-card.depth-3 { transform: translateY(-6.8%) scale(0.91); filter: brightness(0.64); }
+.crate-card.depth-4 { transform: translateY(-8.5%) scale(0.88); filter: brightness(0.52); }
 .crate-card.flip {
   /* negative rotation: the top tips toward the viewer — flipping forward */
   transform: rotateX(-70deg) translateY(10%);
   opacity: 0;
 }
-.crate-card.is-divider {
-  inset: auto -1.5% 4%;
-  aspect-ratio: 1 / 1.04;
-}
+.crate-card.is-divider { left: -1%; right: -1%; }
 .crate-cover {
   width: 100%;
   height: 100%;
@@ -447,12 +448,13 @@ img.labelpreview {
 }
 .crate-label:hover { transform: scale(3); z-index: 3; }
 
-/* File-folder tab on top of the divider; the label fills the tab. */
+/* File-folder tab on top of the divider. Same width as a sleeve label —
+   both are 62mm in the real world. */
 .crate-divider-tab {
   position: absolute;
   bottom: 100%;
-  width: 34%;
-  padding: 5px 5px 0;
+  width: 21%;
+  padding: 4px 4px 0;
   border: 2px solid var(--ink);
   border-bottom: none;
   box-sizing: border-box;
@@ -471,7 +473,7 @@ img.labelpreview {
 .crate-divider-tab.tab-right .crate-divider-label { transform-origin: top right; }
 .crate-divider-label:hover { transform: scale(2.4); position: relative; z-index: 3; }
 .crate-backstrip {
-  width: min(58vh, 560px);
+  width: var(--crate-w);
   margin: 0 0 14px;
   padding: 8px 0;
   border: none;
