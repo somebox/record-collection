@@ -418,12 +418,13 @@ img.labelpreview {
 .crate-card.depth-3 { transform: translateY(-10%) scale(0.88); filter: brightness(0.64); }
 .crate-card.depth-4 { transform: translateY(-12.5%) scale(0.84); filter: brightness(0.52); }
 .crate-card.flip {
-  transform: rotateX(72deg) translateY(16%);
+  /* negative rotation: the top tips toward the viewer — flipping forward */
+  transform: rotateX(-70deg) translateY(10%);
   opacity: 0;
 }
 .crate-card.is-divider {
   inset: auto -1.5% 4%;
-  aspect-ratio: 1 / 1.14;  /* stands taller than the records, same bottom line */
+  aspect-ratio: 1 / 1.04;
 }
 .crate-cover {
   width: 100%;
@@ -432,23 +433,43 @@ img.labelpreview {
   display: block;
 }
 .crate-cover.noimg { background: var(--tint-strong); }
+/* True to scale: a 62mm label on a 315mm sleeve is ~20% wide. Hover to read. */
 .crate-label {
   position: absolute;
-  left: 50%;
-  bottom: 5%;
-  transform: translateX(-50%);
-  width: 82%;
+  top: 4%;
+  right: 4%;
+  width: 20%;
   border: 1px solid var(--ink);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   cursor: pointer;
+  transition: transform 0.15s ease;
+  transform-origin: top right;
 }
+.crate-label:hover { transform: scale(3); z-index: 3; }
+
+/* File-folder tab on top of the divider; the label fills the tab. */
+.crate-divider-tab {
+  position: absolute;
+  bottom: 100%;
+  width: 34%;
+  padding: 5px 5px 0;
+  border: 2px solid var(--ink);
+  border-bottom: none;
+  box-sizing: border-box;
+}
+.crate-divider-tab.tab-left { left: -2px; }
+.crate-divider-tab.tab-center { left: 50%; transform: translateX(-50%); }
+.crate-divider-tab.tab-right { right: -2px; }
 .crate-divider-label {
   display: block;
-  width: 92%;
-  margin: 4% auto 0;
-  border: 1px solid var(--swatch-border);
+  width: 100%;
   cursor: pointer;
+  transition: transform 0.15s ease;
 }
+.crate-divider-tab.tab-left .crate-divider-label { transform-origin: top left; }
+.crate-divider-tab.tab-center .crate-divider-label { transform-origin: top center; }
+.crate-divider-tab.tab-right .crate-divider-label { transform-origin: top right; }
+.crate-divider-label:hover { transform: scale(2.4); position: relative; z-index: 3; }
 .crate-backstrip {
   width: min(58vh, 560px);
   margin: 0 0 14px;
