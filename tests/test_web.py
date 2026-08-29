@@ -33,6 +33,10 @@ def test_folder_view_404_for_unknown(client):
     assert client.get("/folder/9999").status_code == 404
 
 
+def test_folder_view_404_for_non_numeric_id(client):
+    assert client.get("/folder/abc").status_code == 404
+
+
 def test_item_partial_and_page(client):
     assert b"modal-box" not in client.get("/item/100?partial=1").data
     assert client.get("/item/100").status_code == 200
@@ -143,3 +147,139 @@ def test_folder_color_filter_is_deterministic(client):
         a = folder_color(1244414)
         b = folder_color(1244414)
     assert a == b and a.startswith("hsl(")
+
+
+def test_api_print_sleeves_empty_ids_returns_400(client):
+    resp = post(client, "/api/print", {"type": "sleeves", "ids": []})
+    assert resp.status_code == 400
+
+
+def test_api_print_sleeves_empty_folder_returns_400(client):
+    resp = post(client, "/api/print", {"type": "sleeves", "id": 20})
+    assert resp.status_code == 400
+
+
+# Malformed-body 400 tests for every POST write handler (A1.2 / §2.6.1).
+# Each handler must return 400, not 500, on null body or missing required key.
+
+
+def _post_raw(client, path, body):
+    return client.post(path, data=body, content_type="application/json")
+
+
+def test_api_move_null_body_returns_400(client):
+    assert _post_raw(client, "/api/move", "null").status_code == 400
+
+
+def test_api_move_missing_keys_returns_400(client):
+    assert _post_raw(client, "/api/move", "{}").status_code == 400
+
+
+def test_api_field_null_body_returns_400(client):
+    assert _post_raw(client, "/api/field", "null").status_code == 400
+
+
+def test_api_field_missing_keys_returns_400(client):
+    assert _post_raw(client, "/api/field", "{}").status_code == 400
+
+
+def test_api_paid_null_body_returns_400(client):
+    assert _post_raw(client, "/api/paid", "null").status_code == 400
+
+
+def test_api_paid_missing_keys_returns_400(client):
+    assert _post_raw(client, "/api/paid", "{}").status_code == 400
+
+
+def test_api_year_null_body_returns_400(client):
+    assert _post_raw(client, "/api/year", "null").status_code == 400
+
+
+def test_api_year_missing_keys_returns_400(client):
+    assert _post_raw(client, "/api/year", "{}").status_code == 400
+
+
+def test_api_create_folder_null_body_returns_400(client):
+    assert _post_raw(client, "/api/folders", "null").status_code == 400
+
+
+def test_api_create_folder_missing_keys_returns_400(client):
+    assert _post_raw(client, "/api/folders", "{}").status_code == 400
+
+
+def test_api_rename_folder_null_body_returns_400(client):
+    # Even protected-folder rejection happens before body parse — either way 400.
+    assert _post_raw(client, "/api/folders/10/rename", "null").status_code == 400
+
+
+def test_api_rename_folder_missing_keys_returns_400(client):
+    assert _post_raw(client, "/api/folders/10/rename", "{}").status_code == 400
+
+
+def test_api_folder_color_null_body_returns_400(client):
+    # `color` is the only key and is not required, so missing keys {} → 200
+    # (clears the color). `null` body should still 400.
+    assert _post_raw(client, "/api/folders/10/color", "null").status_code == 400
+
+
+def test_api_delete_folder_null_body_returns_400(client):
+    assert _post_raw(client, "/api/folders/10/delete", "null").status_code == 400
+
+
+def test_api_delete_folder_missing_keys_returns_400(client):
+    assert _post_raw(client, "/api/folders/10/delete", "{}").status_code == 400
+
+
+def test_api_suggest_folder_null_body_returns_400(client):
+    # AI is disabled in tests (no key) so the order is: AI check first, then
+    # body validation. With no key, this stays a 503 — that's the existing
+    # AI-disabled path. We need to wire a key to exercise body validation.
+    from lib import web
+
+    original = web.config.load_secrets
+    web.config.load_secrets = lambda: {"openrouter_key": "test"}
+    try:
+        assert _post_raw(client, "/api/suggest_folder", "null").status_code == 400
+    finally:
+        web.config.load_secrets = original
+
+
+def test_api_suggest_folder_missing_keys_returns_400(client):
+    from lib import web
+
+    original = web.config.load_secrets
+    web.config.load_secrets = lambda: {"openrouter_key": "test"}
+    try:
+        assert _post_raw(client, "/api/suggest_folder", "{}").status_code == 400
+    finally:
+        web.config.load_secrets = original
+
+
+def test_api_generate_null_body_returns_400(client):
+    from lib import web
+
+    original = web.config.load_secrets
+    web.config.load_secrets = lambda: {"openrouter_key": "test"}
+    try:
+        assert _post_raw(client, "/api/generate", "null").status_code == 400
+    finally:
+        web.config.load_secrets = original
+
+
+def test_api_generate_missing_keys_returns_400(client):
+    from lib import web
+
+    original = web.config.load_secrets
+    web.config.load_secrets = lambda: {"openrouter_key": "test"}
+    try:
+        assert _post_raw(client, "/api/generate", "{}").status_code == 400
+    finally:
+        web.config.load_secrets = original
+
+
+def test_api_print_null_body_returns_400(client):
+    assert _post_raw(client, "/api/print", "null").status_code == 400
+
+
+def test_api_print_missing_keys_returns_400(client):
+    assert _post_raw(client, "/api/print", "{}").status_code == 400

@@ -353,6 +353,8 @@ def save_pdf(images: list[Image.Image], path) -> None:
         page = Image.new("L", (PAPER_WIDTH, image.height), 255)
         page.paste(image.convert("L"), ((PAPER_WIDTH - WIDTH) // 2, 0))
         pages.append(page)
+    if not pages:
+        raise PrintError("save_pdf: no images to write")
     pages[0].save(path, save_all=True, append_images=pages[1:], resolution=DPI)
 
 

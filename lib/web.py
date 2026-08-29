@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import io
 
-from flask import Flask, abort, g, jsonify, redirect, render_template, request, send_file, url_for
+from flask import Flask, abort, g, jsonify, make_response, redirect, render_template, request, send_file, url_for
 
 from lib import config, db
 from lib.sync import FIELD_MEDIA, FIELD_NOTES, FIELD_SLEEVE, FIELD_STYLE, FIELD_SUMMARY
@@ -126,6 +126,12 @@ def index():
 
 @app.route("/folder/<folder_id>")
 def folder_view(folder_id):
+    if folder_id != "all":
+        try:
+            folder_id = int(folder_id)
+        except ValueError:
+            abort(404)
+
     conn = get_conn()
     folders, total = folder_list(conn)
     q = request.args.get("q", "").strip()
@@ -136,7 +142,7 @@ def folder_view(folder_id):
     where, params = [], []
     if folder_id != "all":
         where.append("i.folder_id = ?")
-        params.append(int(folder_id))
+        params.append(folder_id)
     if q:
         where.append("(i.title LIKE ? OR i.artist LIKE ? OR i.style LIKE ? OR i.notes LIKE ?)")
         params += [f"%{q}%"] * 4
@@ -159,7 +165,7 @@ def folder_view(folder_id):
 
     current = None
     if folder_id != "all":
-        current = conn.execute("SELECT * FROM folders WHERE id = ?", (int(folder_id),)).fetchone()
+        current = conn.execute("SELECT * FROM folders WHERE id = ?", (folder_id,)).fetchone()
         if current is None:
             abort(404)
 
@@ -270,6 +276,23 @@ def _require_item(conn, instance_id: int):
     return item
 
 
+def _require_json(keys: list[str]) -> tuple:
+    """Validate request body. Returns (data, None) on success, or
+    (None, error_response) on failure where error_response is a
+    pre-built 400 response. Per §2.6.1 every POST write handler must
+    reject null/non-dict bodies and missing required keys with 400
+    rather than 500."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return None, make_response(jsonify({"error": "missing or invalid JSON body"}), 400)
+    for key in keys:
+        if key not in data:
+            return None, make_response(
+                jsonify({"error": f"missing required field: {key}"}), 400
+            )
+    return data, None
+
+
 def _username(conn) -> str:
     username = db.get_setting(conn, "username")
     if not username:
@@ -290,7 +313,9 @@ app.register_error_handler(DiscogsError, _handle_discogs_error)
 
 @app.post("/api/move")
 def api_move():
-    data = request.get_json()
+    data, err = _require_json(["instance_id", "to_folder_id"])
+    if data is None:
+        return err
     conn = get_conn()
     item = _require_item(conn, int(data["instance_id"]))
     to_folder = int(data["to_folder_id"])
@@ -310,7 +335,9 @@ def api_move():
 
 @app.post("/api/field")
 def api_field():
-    data = request.get_json()
+    data, err = _require_json(["instance_id", "field"])
+    if data is None:
+        return err
     field = data["field"]
     if field not in EDITABLE_FIELDS:
         abort(400, "unknown field")
@@ -336,7 +363,9 @@ def api_field():
 @app.post("/api/paid")
 def api_paid():
     """App-local paid price — never sent to Discogs."""
-    data = request.get_json()
+    data, err = _require_json(["instance_id"])
+    if data is None:
+        return err
     conn = get_conn()
     item = _require_item(conn, int(data["instance_id"]))
     raw = (str(data.get("value") or "")).strip().lstrip("$")
@@ -359,7 +388,9 @@ def api_paid():
 @app.post("/api/year")
 def api_year():
     """App-local display year, useful for showing an original year on a reissue."""
-    data = request.get_json()
+    data, err = _require_json(["instance_id"])
+    if data is None:
+        return err
     conn = get_conn()
     item = _require_item(conn, int(data["instance_id"]))
     raw = str(data.get("value") or "").strip()
@@ -383,7 +414,10 @@ def api_year():
 
 @app.post("/api/folders")
 def api_create_folder():
-    name = (request.get_json().get("name") or "").strip()
+    data, err = _require_json(["name"])
+    if data is None:
+        return err
+    name = (data.get("name") or "").strip()
     if not name:
         abort(400, "empty name")
     conn = get_conn()
@@ -399,7 +433,10 @@ def api_create_folder():
 def api_rename_folder(folder_id):
     if folder_id in (0, UNCATEGORIZED_ID):
         abort(400, "this folder cannot be renamed")
-    name = (request.get_json().get("name") or "").strip()
+    data, err = _require_json(["name"])
+    if data is None:
+        return err
+    name = (data.get("name") or "").strip()
     if not name:
         abort(400, "empty name")
     conn = get_conn()
@@ -412,7 +449,10 @@ def api_rename_folder(folder_id):
 @app.post("/api/folders/<int:folder_id>/color")
 def api_folder_color(folder_id):
     """App-local only — Discogs has no notion of folder colors."""
-    color = request.get_json().get("color") or None
+    data, err = _require_json([])
+    if data is None:
+        return err
+    color = data.get("color") or None
     if color is not None and color not in PALETTE:
         abort(400, "color not in palette")
     conn = get_conn()
@@ -425,8 +465,11 @@ def api_folder_color(folder_id):
 def api_delete_folder(folder_id):
     if folder_id in (0, UNCATEGORIZED_ID):
         abort(400, "this folder cannot be deleted")
+    data, err = _require_json(["move_to"])
+    if data is None:
+        return err
     conn = get_conn()
-    move_to = int(request.get_json().get("move_to") or UNCATEGORIZED_ID)
+    move_to = int(data.get("move_to") or UNCATEGORIZED_ID)
     if move_to == folder_id or conn.execute(
         "SELECT 1 FROM folders WHERE id = ?", (move_to,)
     ).fetchone() is None:
@@ -456,8 +499,11 @@ def api_suggest_folder():
     client = _ai_client()
     if client is None:
         return jsonify({"error": "no OpenRouter key in secrets.yaml — AI features are disabled"}), 503
+    data, err = _require_json(["instance_id"])
+    if data is None:
+        return err
     conn = get_conn()
-    item = dict(_require_item(conn, int(request.get_json()["instance_id"])))
+    item = dict(_require_item(conn, int(data["instance_id"])))
     folders = {
         f["name"]: f["id"]
         for f in conn.execute("SELECT * FROM folders WHERE id != ?", (UNCATEGORIZED_ID,))
@@ -553,8 +599,11 @@ def api_generate():
     client = _ai_client()
     if client is None:
         return jsonify({"error": "no OpenRouter key in secrets.yaml — AI features are disabled"}), 503
+    data, err = _require_json(["instance_id"])
+    if data is None:
+        return err
     conn = get_conn()
-    item = dict(_require_item(conn, int(request.get_json()["instance_id"])))
+    item = dict(_require_item(conn, int(data["instance_id"])))
     release_notes = (get_discogs().release(item["release_id"]).get("notes") or "").strip()
     try:
         draft = summarize_item(client, item, release_notes or None)
@@ -579,7 +628,9 @@ def label_sleeve(instance_id):
 def api_print():
     from lib import labels
 
-    data = request.get_json()
+    data, err = _require_json(["type"])
+    if data is None:
+        return err
     kind = data["type"]
     conn = get_conn()
     include_paid = bool(data.get("paid"))
@@ -598,9 +649,12 @@ def api_print():
                     (int(data["id"]),),
                 )
             ]
-        images = [_sleeve_image(conn, i) for i in ids]
+        images = [_sleeve_image(conn, i, include_paid=include_paid) for i in ids]
     else:
         abort(400, "unknown label type")
+
+    if not images:
+        abort(400, "no labels to print — selection is empty")
 
     settings = config.load_settings()
     if settings["label_output"] == "pdf":

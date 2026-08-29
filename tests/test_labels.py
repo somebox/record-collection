@@ -95,3 +95,10 @@ def test_save_pdf(tmp_path):
     path = tmp_path / "out.pdf"
     labels.save_pdf([sleeve(), sleeve(title="Second")], path)
     assert path.stat().st_size > 1000
+
+
+def test_save_pdf_empty_images_raises(tmp_path):
+    import pytest
+
+    with pytest.raises(labels.PrintError):
+        labels.save_pdf([], tmp_path / "empty.pdf")
