@@ -36,7 +36,7 @@ PALETTE = [
 SORT_COLUMNS = {
     "title": "title COLLATE NOCASE",
     "artist": "artist COLLATE NOCASE",
-    "year": "year",
+    "year": "coalesce(yo.year, i.year)",
     "added": "date_added",
     "price": "p.price",
 }
@@ -51,10 +51,13 @@ def get_conn():
 
 
 @app.teardown_appcontext
-def close_conn(_exc):
+def close_resources(_exc):
     conn = g.pop("conn", None)
     if conn is not None:
         conn.close()
+    discogs = g.pop("discogs", None)
+    if discogs is not None:
+        discogs.close()
 
 
 def get_discogs():
@@ -140,8 +143,14 @@ def folder_view(folder_id):
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
 
     items = conn.execute(
-        f"""SELECT i.*, p.price, p.fetched_at AS price_fetched_at, f.name AS folder_name
+        f"""SELECT i.*, coalesce(yo.year, i.year) AS display_year,
+                   yo.year AS year_override, p.price, p.fetched_at AS price_fetched_at,
+                   CASE WHEN p.fetched_at IS NULL
+                          OR julianday('now') - julianday(p.fetched_at) >= 7
+                        THEN 1 ELSE 0 END AS price_stale,
+                   f.name AS folder_name
             FROM items i
+            LEFT JOIN year_overrides yo ON yo.instance_id = i.instance_id
             LEFT JOIN prices p ON p.release_id = i.release_id
             JOIN folders f ON f.id = i.folder_id
             {where_sql} ORDER BY {order} {direction}""",
@@ -183,8 +192,9 @@ def crate_view():
     entries, start_index = [], 0
     for f in ordered:
         items = conn.execute(
-            "SELECT instance_id, title, artist, year, cover_url FROM items "
-            "WHERE folder_id = ? ORDER BY artist, year",
+            "SELECT i.instance_id, i.title, i.artist, coalesce(yo.year, i.year) AS year, "
+            "i.cover_url FROM items i LEFT JOIN year_overrides yo ON yo.instance_id=i.instance_id "
+            "WHERE i.folder_id = ? ORDER BY i.artist, coalesce(yo.year, i.year)",
             (f["id"],),
         ).fetchall()
         if not items:
@@ -207,8 +217,11 @@ def crate_view():
 def item_view(instance_id):
     conn = get_conn()
     item = conn.execute(
-        """SELECT i.*, f.name AS folder_name, p.price, p.country, pu.paid_price FROM items i
+        """SELECT i.*, coalesce(yo.year, i.year) AS display_year,
+                  yo.year AS year_override, f.name AS folder_name,
+                  p.price, p.country, pu.paid_price FROM items i
            JOIN folders f ON f.id = i.folder_id
+           LEFT JOIN year_overrides yo ON yo.instance_id = i.instance_id
            LEFT JOIN prices p ON p.release_id = i.release_id
            LEFT JOIN purchases pu ON pu.instance_id = i.instance_id
            WHERE i.instance_id = ?""",
@@ -343,6 +356,31 @@ def api_paid():
     return jsonify({"ok": True})
 
 
+@app.post("/api/year")
+def api_year():
+    """App-local display year, useful for showing an original year on a reissue."""
+    data = request.get_json()
+    conn = get_conn()
+    item = _require_item(conn, int(data["instance_id"]))
+    raw = str(data.get("value") or "").strip()
+    with conn:
+        if not raw:
+            conn.execute("DELETE FROM year_overrides WHERE instance_id = ?", (item["instance_id"],))
+        else:
+            try:
+                year = int(raw)
+            except ValueError:
+                abort(400, "display year must be a whole number")
+            if not 1 <= year <= 9999:
+                abort(400, "display year must be between 1 and 9999")
+            conn.execute(
+                "INSERT INTO year_overrides (instance_id, year) VALUES (?, ?) "
+                "ON CONFLICT(instance_id) DO UPDATE SET year = excluded.year",
+                (item["instance_id"], year),
+            )
+    return jsonify({"ok": True})
+
+
 @app.post("/api/folders")
 def api_create_folder():
     name = (request.get_json().get("name") or "").strip()
@@ -459,6 +497,10 @@ def _sleeve_image(conn, instance_id: int, include_paid: bool = False):
     from lib import labels
 
     item = dict(_require_item(conn, instance_id))
+    override = conn.execute(
+        "SELECT year FROM year_overrides WHERE instance_id = ?", (instance_id,)
+    ).fetchone()
+    item["year"] = override["year"] if override else item["year"]
     release = conn.execute(
         "SELECT country FROM prices WHERE release_id = ?", (item["release_id"],)
     ).fetchone()
@@ -488,11 +530,9 @@ def folder_details(folder_id):
 @app.post("/api/sync")
 def api_sync():
     from lib import sync
-    from lib.discogs import DiscogsClient
 
     conn = get_conn()
-    discogs = DiscogsClient(config.load_secrets()["discogs_pat"])
-    result = sync.pull(discogs, conn, _username(conn))
+    result = sync.pull(get_discogs(), conn, _username(conn))
     return jsonify({"ok": True, **result})
 
 

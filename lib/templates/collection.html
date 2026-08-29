@@ -108,14 +108,14 @@
           </td>
           <td class="title"><a href="{{ url_for('item_view', instance_id=i.instance_id) }}">{{ i.title }}</a></td>
           <td>{{ i.artist }}</td>
-          <td class="num">{{ i.year or "" }}</td>
+          <td class="num">{{ i.display_year or "" }}</td>
           <td><a class="chip" style="background: {{ i.folder_id|folder_color }}"
                  href="{{ url_for('folder_view', folder_id=i.folder_id) }}">{{ i.folder_name }}</a></td>
           <td class="desc dim">{{ i.style or "" }}</td>
           <td class="dim">{{ i.date_added|shortdate }}</td>
           <td class="desc dim">{{ i.notes or "" }}</td>
           <td class="num price" data-release="{{ i.release_id }}"
-              data-stale="{{ '1' if not i.price_fetched_at else '0' }}">{{ i.price|money }}</td>
+              data-stale="{{ i.price_stale }}">{{ i.price|money }}</td>
         </tr>
         {% endfor %}
       </tbody>

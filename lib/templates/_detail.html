@@ -3,7 +3,7 @@
   <aside class="detail-info">
     {% if item.cover_url %}<img class="cover" src="{{ item.cover_url }}" alt="">{% endif %}
     <h2>{{ item.title }}</h2>
-    <div class="dim">{{ item.artist }}{% if item.year %} · {{ item.year }}{% endif %}</div>
+    <div class="dim">{{ item.artist }}{% if item.display_year %} · {{ item.display_year }}{% endif %}</div>
     <div class="dim">{{ item.label }}{% if item.catno %} · {{ item.catno }}{% endif %}{% if item.country %} · {{ item.country }}{% endif %}</div>
     <p class="dim meta-block">
       added {{ item.date_added|shortdate }}<br>
@@ -57,6 +57,12 @@
       <div class="value dim">{{ item.genres }}{% if item.discogs_styles %} — {{ item.discogs_styles }}{% endif %}</div>
     </div>
     <div class="cols">
+      <div class="field">
+        <div class="head">Display year <span class="dim">(Discogs: {{ item.year or '—' }})</span></div>
+        <input class="edit" name="year_override" inputmode="numeric"
+               value="{{ item.year_override or '' }}" data-orig="{{ item.year_override or '' }}"
+               placeholder="original year">
+      </div>
       <div class="field">
         <div class="head">Paid price <span class="dim">(app-only)</span></div>
         <input class="edit" name="paid_price" inputmode="decimal"

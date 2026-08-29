@@ -1,6 +1,8 @@
 """Discogs API client: auth, throttling, pagination, collection reads and writes."""
 
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Iterator
 
 import httpx
@@ -10,6 +12,8 @@ from lib.config import USER_AGENT
 API = "https://api.discogs.com"
 PER_PAGE = 100
 MAX_RETRIES = 3
+DEFAULT_RETRY_DELAY = 10
+MAX_RETRY_DELAY = 60
 
 
 class DiscogsError(Exception):
@@ -27,12 +31,39 @@ class DiscogsClient:
             timeout=30,
         )
 
+    def close(self) -> None:
+        self._http.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, _exc_type, _exc, _tb):
+        self.close()
+
+    @staticmethod
+    def _retry_delay(value: str | None) -> float:
+        if not value:
+            return DEFAULT_RETRY_DELAY
+        try:
+            delay = float(value)
+        except ValueError:
+            try:
+                retry_at = parsedate_to_datetime(value)
+                if retry_at.tzinfo is None:
+                    retry_at = retry_at.replace(tzinfo=timezone.utc)
+                delay = (retry_at - datetime.now(timezone.utc)).total_seconds()
+            except (TypeError, ValueError, OverflowError):
+                return DEFAULT_RETRY_DELAY
+        return max(0, min(delay, MAX_RETRY_DELAY))
+
     def _request(self, method: str, path: str, **kwargs) -> dict:
         for attempt in range(MAX_RETRIES):
-            resp = self._http.request(method, path, **kwargs)
+            try:
+                resp = self._http.request(method, path, **kwargs)
+            except httpx.TransportError as exc:
+                raise DiscogsError(f"{method} {path}: {exc}") from exc
             if resp.status_code == 429:
-                wait = int(resp.headers.get("Retry-After", "10"))
-                time.sleep(wait)
+                time.sleep(self._retry_delay(resp.headers.get("Retry-After")))
                 continue
             if resp.is_error:
                 raise DiscogsError(f"{method} {path}: HTTP {resp.status_code} {resp.text[:200]}")

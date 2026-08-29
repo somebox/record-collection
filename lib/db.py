@@ -49,6 +49,12 @@ CREATE TABLE IF NOT EXISTS purchases (
     paid_price REAL
 );
 
+-- App-local display year for reissues; the Discogs pressing year remains on items.
+CREATE TABLE IF NOT EXISTS year_overrides (
+    instance_id INTEGER PRIMARY KEY,
+    year INTEGER NOT NULL CHECK (year BETWEEN 1 AND 9999)
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT

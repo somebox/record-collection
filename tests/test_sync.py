@@ -89,3 +89,10 @@ def test_purchases_survive_pull(conn):
         conn.execute("INSERT INTO purchases (instance_id, paid_price) VALUES (100, 25.0)")
     sync.pull(FakeDiscogs(), conn, "tester")
     assert conn.execute("SELECT paid_price FROM purchases WHERE instance_id = 100").fetchone()[0] == 25.0
+
+
+def test_year_overrides_survive_pull(conn):
+    with conn:
+        conn.execute("INSERT INTO year_overrides (instance_id, year) VALUES (100, 1958)")
+    sync.pull(FakeDiscogs(), conn, "tester")
+    assert conn.execute("SELECT year FROM year_overrides WHERE instance_id = 100").fetchone()[0] == 1958

@@ -226,8 +226,10 @@ def cmd_labels(args: argparse.Namespace) -> int:
     else:
         folder = find_folder(args.sleeves)
         rows = conn.execute(
-            "SELECT i.*, p.country FROM items i LEFT JOIN prices p ON p.release_id = i.release_id "
-            "WHERE i.folder_id = ? ORDER BY i.artist, i.year",
+            "SELECT i.*, coalesce(yo.year, i.year) AS display_year, p.country FROM items i "
+            "LEFT JOIN year_overrides yo ON yo.instance_id = i.instance_id "
+            "LEFT JOIN prices p ON p.release_id = i.release_id "
+            "WHERE i.folder_id = ? ORDER BY i.artist, coalesce(yo.year, i.year)",
             (folder["id"],),
         ).fetchall()
         for row in rows:
@@ -262,7 +264,7 @@ def cmd_labels(args: argparse.Namespace) -> int:
 
 
 def cmd_backup(args: argparse.Namespace) -> int:
-    """Export the app-local data Discogs can't restore: paid prices, folder colors."""
+    """Export app-local data Discogs can't restore."""
     import json
     from datetime import datetime, timezone
 
@@ -279,11 +281,18 @@ def cmd_backup(args: argparse.Namespace) -> int:
             str(r["id"]): r["color"]
             for r in conn.execute("SELECT id, color FROM folders WHERE color IS NOT NULL")
         },
+        "year_overrides": {
+            str(r["instance_id"]): r["year"]
+            for r in conn.execute("SELECT * FROM year_overrides")
+        },
     }
     out = args.out or f"backup-{datetime.now():%Y%m%d}.json"
     with open(out, "w") as f:
         json.dump(data, f, indent=2)
-    print(f"✔ {len(data['purchases'])} paid price(s), {len(data['folder_colors'])} color(s) → {out}")
+    print(
+        f"✔ {len(data['purchases'])} paid price(s), {len(data['folder_colors'])} color(s), "
+        f"{len(data['year_overrides'])} year override(s) → {out}"
+    )
     return 0
 
 
@@ -304,9 +313,16 @@ def cmd_restore(args: argparse.Namespace) -> int:
             )
         for folder_id, color in data.get("folder_colors", {}).items():
             conn.execute("UPDATE folders SET color = ? WHERE id = ?", (color, int(folder_id)))
+        for instance_id, year in data.get("year_overrides", {}).items():
+            conn.execute(
+                "INSERT INTO year_overrides (instance_id, year) VALUES (?, ?) "
+                "ON CONFLICT(instance_id) DO UPDATE SET year = excluded.year",
+                (int(instance_id), int(year)),
+            )
     print(
         f"✔ restored {len(data.get('purchases', {}))} paid price(s), "
-        f"{len(data.get('folder_colors', {}))} color(s) from {args.file}"
+        f"{len(data.get('folder_colors', {}))} color(s), "
+        f"{len(data.get('year_overrides', {}))} year override(s) from {args.file}"
     )
     return 0
 
@@ -348,7 +364,9 @@ def main() -> None:
     p_labels.add_argument("--pdf", metavar="FILE", help="write a PDF (one label per page) instead of printing")
     p_labels.set_defaults(func=cmd_labels)
 
-    p_backup = sub.add_parser("backup", help="export app-local data (paid prices, folder colors)")
+    p_backup = sub.add_parser(
+        "backup", help="export app-local data (paid prices, folder colors, display years)"
+    )
     p_backup.add_argument("--out", metavar="FILE")
     p_backup.set_defaults(func=cmd_backup)
 

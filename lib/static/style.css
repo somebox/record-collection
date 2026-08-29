@@ -1,4 +1,4 @@
-/* Record Collection — see docs/styleguide.md for conventions. */
+/* Record Collection — see docs/frontend-styleguide.md for conventions. */
 
 /* -- tokens ---------------------------------------------------------------- */
 :root {
@@ -10,6 +10,10 @@
   --tint: #f6f6f6;          /* subtle row tint (uncategorized, hover) */
   --tint-strong: #ececec;   /* stronger tint (active, hover-on-tint) */
   --swatch-border: rgba(0, 0, 0, 0.2);
+  --sleeve-edge: #b8b5ae;
+  --cardboard-edge: #8f8879;
+  --wood-edge: #695846;
+  --acrylic-edge: rgba(215, 238, 242, 0.9);
 }
 
 /* -- base ------------------------------------------------------------------ */
@@ -394,7 +398,7 @@ img.labelpreview {
 }
 .crate-tab-current { font-weight: 700; }
 
-.crate { --crate-w: min(74vw, 1100px); }
+.crate { --crate-w: min(74vw, 1100px, 100vh); }
 .crate-stage {
   position: relative;
   flex: 1 1 0;
@@ -406,6 +410,8 @@ img.labelpreview {
   overflow: hidden;  /* head-on view: the lower part of the record sits in the crate */
 }
 .crate-card {
+  --card-edge: var(--sleeve-edge);
+  --card-thickness: 3px;
   position: absolute;
   top: 15%;
   left: 0;
@@ -413,8 +419,25 @@ img.labelpreview {
   aspect-ratio: 1 / 1;
   background: var(--paper);
   border: 2px solid var(--ink);
-  transform-origin: bottom center;
-  transition: transform 0.24s ease, opacity 0.24s ease, filter 0.24s ease;
+  box-shadow: 0 4px 9px rgba(0, 0, 0, 0.2);
+  transform-origin: center 82%; /* the sleeve bears against the lower inside edge of the crate */
+  transform-style: preserve-3d;
+  transition: transform 0.3s cubic-bezier(0.22, 0.72, 0.25, 1), opacity 0.3s ease,
+              filter 0.3s ease, box-shadow 0.3s ease;
+}
+/* The top edge becomes visible as a sleeve tips toward the viewer. */
+.crate-card::after {
+  content: "";
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  top: -2px;
+  height: var(--card-thickness);
+  background: var(--card-edge);
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  transform-origin: top;
+  transform: rotateX(90deg);
+  pointer-events: none;
 }
 .crate-card:not(.depth-0) { transform-origin: top center; }
 .crate-card.depth-1 { transform: translateY(-2.5%) scale(0.97); filter: brightness(0.88); }
@@ -422,11 +445,16 @@ img.labelpreview {
 .crate-card.depth-3 { transform: translateY(-6.8%) scale(0.91); filter: brightness(0.64); }
 .crate-card.depth-4 { transform: translateY(-8.5%) scale(0.88); filter: brightness(0.52); }
 .crate-card.flip {
-  /* negative rotation: the top tips toward the viewer — flipping forward */
-  transform: rotateX(-70deg) translateY(10%);
+  /* A record pivots where it rests against the crate, not at an abstract page edge. */
+  transform: rotateX(-68deg) translateY(3%) translateZ(8px);
+  box-shadow: 0 24px 28px rgba(0, 0, 0, 0.38);
   opacity: 0;
 }
-.crate-card.is-divider { left: -1%; right: -1%; }
+.crate-card.is-divider {
+  --card-thickness: 7px;
+  left: -1%;
+  right: -1%;
+}
 .crate-cover {
   width: 100%;
   height: 100%;
@@ -448,16 +476,55 @@ img.labelpreview {
 }
 .crate-label:hover { transform: scale(3); z-index: 3; }
 
-/* File-folder tab on top of the divider. Same width as a sleeve label —
-   both are 62mm in the real world. */
+/* Raised divider tabs: the base width compensates for the 2%-wider divider,
+   so it matches the 20%-wide 62mm sleeve label. Materials vary like a real crate. */
 .crate-divider-tab {
   position: absolute;
   bottom: 100%;
-  width: 21%;
-  padding: 4px 4px 0;
+  width: 19.6%;
+  padding: 5px 5px 1px;
   border: 2px solid var(--ink);
   border-bottom: none;
+  border-radius: 7px 7px 0 0;
   box-sizing: border-box;
+  box-shadow: inset 0 2px rgba(255, 255, 255, 0.28);
+}
+/* Marker-written fiberboard: matte, thick, and slightly softened at the tab. */
+.crate-card.material-cardboard {
+  --card-edge: var(--cardboard-edge);
+  background-image: repeating-linear-gradient(
+    2deg, transparent 0 7px, rgba(0, 0, 0, 0.035) 8px 9px
+  );
+}
+.crate-card.material-cardboard .crate-divider-tab { border-radius: 10px 10px 0 0; }
+/* Varnished wood: broad rounded tab and quiet grain over the folder color. */
+.crate-card.material-wood {
+  --card-edge: var(--wood-edge);
+  --card-thickness: 9px;
+  background-image: repeating-linear-gradient(
+    88deg, transparent 0 18px, rgba(72, 46, 22, 0.1) 20px 22px,
+    transparent 24px 37px
+  );
+  box-shadow: inset 0 0 0 2px rgba(78, 51, 26, 0.25), 0 5px 11px rgba(0, 0, 0, 0.25);
+}
+.crate-card.material-wood .crate-divider-tab {
+  width: 25%;
+  border-radius: 14px 14px 0 0;
+}
+/* Laser-cut acrylic: a taller shoulder, crisp edge, and translucent highlight. */
+.crate-card.material-acrylic {
+  --card-edge: var(--acrylic-edge);
+  --card-thickness: 6px;
+  background-image: linear-gradient(
+    125deg, rgba(255, 255, 255, 0.55), transparent 24%, rgba(255, 255, 255, 0.18) 58%,
+    rgba(0, 0, 0, 0.06)
+  );
+  box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.42), 0 5px 12px rgba(0, 0, 0, 0.2);
+}
+.crate-card.material-acrylic .crate-divider-tab {
+  width: 31%;
+  padding-top: 8px;
+  border-radius: 4px 4px 0 0;
 }
 .crate-divider-tab.tab-left { left: -2px; }
 .crate-divider-tab.tab-center { left: 50%; transform: translateX(-50%); }
@@ -484,6 +551,12 @@ img.labelpreview {
 }
 .crate-backstrip:hover { color: var(--ink); }
 .crate-info { font-size: 13px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .crate-card, .crate-label, .crate-divider-label { transition: none; }
+  .crate-card.flip { transform: translateY(4%); }
+  .crate-label:hover, .crate-divider-label:hover { transform: none; }
+}
 
 /* -- responsive ------------------------------------------------------------ */
 @media (max-width: 900px) {

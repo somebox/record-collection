@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta, timezone
 
 
 def post(client, path, payload):
@@ -10,6 +11,22 @@ def test_collection_view_renders(client):
     assert resp.status_code == 200
     assert b"Kind Of Blue" in resp.data
     assert b"jazz" in resp.data
+
+
+def test_collection_marks_only_missing_or_old_prices_stale(client, seeded):
+    old = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
+    with seeded:
+        seeded.execute(
+            "INSERT INTO prices (release_id, price, fetched_at) VALUES (555, 20, ?)", (old,)
+        )
+    assert b'data-stale="1"' in client.get("/folder/all").data
+
+    with seeded:
+        seeded.execute(
+            "UPDATE prices SET fetched_at = ? WHERE release_id = 555",
+            (datetime.now(timezone.utc).isoformat(),),
+        )
+    assert b'data-stale="0"' in client.get("/folder/all").data
 
 
 def test_folder_view_404_for_unknown(client):
@@ -45,6 +62,20 @@ def test_paid_price_set_and_clear(client, seeded):
     assert post(client, "/api/paid", {"instance_id": 100, "value": ""}).status_code == 200
     assert seeded.execute("SELECT count(*) FROM purchases").fetchone()[0] == 0
     assert post(client, "/api/paid", {"instance_id": 100, "value": "abc"}).status_code == 400
+
+
+def test_display_year_override_set_validate_and_clear(client, seeded):
+    original_label = client.get("/labels/sleeve/100.png").data
+    assert post(client, "/api/year", {"instance_id": 100, "value": "1958"}).status_code == 200
+    assert seeded.execute("SELECT year FROM year_overrides WHERE instance_id=100").fetchone()[0] == 1958
+    assert b"1958" in client.get("/item/100?partial=1").data
+    assert b"1958" in client.get("/folder/all").data
+    assert client.get("/labels/sleeve/100.png").data != original_label
+
+    assert post(client, "/api/year", {"instance_id": 100, "value": "nineteen"}).status_code == 400
+    assert post(client, "/api/year", {"instance_id": 100, "value": "10000"}).status_code == 400
+    assert post(client, "/api/year", {"instance_id": 100, "value": ""}).status_code == 200
+    assert seeded.execute("SELECT count(*) FROM year_overrides").fetchone()[0] == 0
 
 
 def test_folder_color_validation(client, seeded):
@@ -86,6 +117,23 @@ def test_crate_view(client):
     assert b"crate-data" in resp.data
     assert b'"type": "divider"' in resp.data
     assert b"Kind Of Blue" in resp.data
+
+
+def test_discogs_client_is_closed_at_request_teardown():
+    from flask import g
+
+    from lib.web import app
+
+    class FakeDiscogs:
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    discogs = FakeDiscogs()
+    with app.test_request_context():
+        g.discogs = discogs
+    assert discogs.closed
 
 
 def test_folder_color_filter_is_deterministic(client):

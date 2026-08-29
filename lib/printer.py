@@ -1,4 +1,15 @@
-"""Brother QL printer discovery. Label rendering/printing arrives in labels.py."""
+"""Brother QL printer discovery and USB identifier handling."""
+
+
+def normalize_identifier(identifier: str) -> str:
+    """Strip the serial suffix emitted by brother-ql's pyusb discovery.
+
+    Discovery returns ``usb://vendor:product_SERIAL``, while the backend parser
+    only accepts hexadecimal product IDs (or a slash-delimited serial). Selecting
+    by vendor/product is reliable for the first discovered printer and avoids the
+    package's internally inconsistent serial format.
+    """
+    return identifier.partition("_")[0] if identifier.startswith("usb://") else identifier
 
 
 def discover() -> list[str]:
@@ -7,6 +18,6 @@ def discover() -> list[str]:
     try:
         from brother_ql.backends.helpers import discover as ql_discover
 
-        return [d["identifier"] for d in ql_discover("pyusb")]
+        return [normalize_identifier(d["identifier"]) for d in ql_discover("pyusb")]
     except Exception:
         return []
