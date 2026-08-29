@@ -68,7 +68,15 @@ class DiscogsClient:
             if resp.is_error:
                 raise DiscogsError(f"{method} {path}: HTTP {resp.status_code} {resp.text[:200]}")
             # Stay under 60 req/min: ease off as the rolling window fills up.
-            remaining = int(resp.headers.get("X-Discogs-Ratelimit-Remaining", "60"))
+            # Discogs can occasionally return a malformed rate-limit header;
+            # surface a clear DiscogsError instead of a raw ValueError.
+            raw_remaining = resp.headers.get("X-Discogs-Ratelimit-Remaining", "60")
+            try:
+                remaining = int(raw_remaining)
+            except (TypeError, ValueError):
+                raise DiscogsError(
+                    f"{method} {path}: malformed X-Discogs-Ratelimit-Remaining: {raw_remaining!r}"
+                )
             if remaining < 5:
                 time.sleep(3)
             elif remaining < 15:

@@ -96,3 +96,44 @@ def test_year_overrides_survive_pull(conn):
         conn.execute("INSERT INTO year_overrides (instance_id, year) VALUES (100, 1958)")
     sync.pull(FakeDiscogs(), conn, "tester")
     assert conn.execute("SELECT year FROM year_overrides WHERE instance_id = 100").fetchone()[0] == 1958
+
+
+def test_artist_names_skips_entries_with_no_name():
+    """An artist entry with neither anv nor name should be skipped, not crash."""
+    assert sync._artist_names([{"anv": "", "name": "Miles Davis (2)"}]) == "Miles Davis"
+    assert sync._artist_names([{"anv": "MD", "name": "ignored"}]) == "MD"
+    # no name, no anv -> skip
+    assert sync._artist_names([{"anv": "", "name": ""}]) == ""
+    assert sync._artist_names([{"anv": "", "name": ""}, {"name": "Other"}]) == "Other"
+    # entirely missing keys -> skip
+    assert sync._artist_names([{}]) == ""
+    assert sync._artist_names([{}, {"name": "Solo"}]) == "Solo"
+
+
+class FakeDiscogsBadArtist(FakeDiscogs):
+    def collection_items(self, username, folder_id=0):
+        return [
+            {
+                "instance_id": 300,
+                "folder_id": 1,
+                "date_added": "2020-01-01T00:00:00-07:00",
+                "basic_information": {
+                    "id": 888,
+                    "title": "Anonymous",
+                    "year": 2000,
+                    "artists": [{"anv": "", "name": ""}],  # malformed: no name
+                    "labels": [],
+                    "genres": [],
+                    "styles": [],
+                },
+            },
+        ]
+
+
+def test_pull_skips_malformed_artist_entry(conn):
+    """A pull with a malformed artist entry should not crash; the row is
+    stored with an empty artist string."""
+    result = sync.pull(FakeDiscogsBadArtist(), conn, "tester")
+    assert result == {"folders": 2, "items": 1}
+    row = conn.execute("SELECT artist FROM items WHERE instance_id = 300").fetchone()
+    assert row["artist"] == ""

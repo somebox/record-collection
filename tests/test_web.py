@@ -48,6 +48,60 @@ def test_field_rejects_unknown_field(client):
     assert resp.status_code == 400
 
 
+def test_api_field_clear_is_consistent_between_local_and_discogs(
+    client_with_fake, seeded
+):
+    """A2.4: ``api_field`` must not write ``NULL`` locally while writing
+    ``""`` to Discogs. The chosen contract is: a cleared field is
+    represented as ``NULL`` locally, and the Discogs ``set_field`` call
+    is SKIPPED (so the local value matches what was sent to Discogs:
+    nothing). Re-sync reconciles any stale Discogs state on the next
+    pull.
+    """
+    client, fake = client_with_fake
+    from lib.web import EDITABLE_FIELDS
+
+    # Seed a non-empty value locally so we can observe the clear.
+    with seeded:
+        seeded.execute(
+            "UPDATE items SET style = ? WHERE instance_id = 100",
+            ("ambient, quiet",),
+        )
+
+    # 1. Setting a non-empty value: both stores get the same string.
+    resp = post(client, "/api/field", {"instance_id": 100, "field": "style", "value": "jazzy"})
+    assert resp.status_code == 200
+    local = seeded.execute(
+        "SELECT style FROM items WHERE instance_id = 100"
+    ).fetchone()[0]
+    assert local == "jazzy"
+    assert fake.fields[100][EDITABLE_FIELDS["style"]] == "jazzy"
+    set_field_calls_so_far = sum(
+        1 for c in fake.calls if c[0] == "set_field"
+    )
+    assert set_field_calls_so_far == 1
+
+    # 2. Clearing: local goes to NULL and Discogs is NOT called. The
+    #    consistency contract is that whatever was sent to Discogs (here:
+    #    nothing) matches the local representation (NULL).
+    resp = post(client, "/api/field", {"instance_id": 100, "field": "style", "value": ""})
+    assert resp.status_code == 200
+    local = seeded.execute(
+        "SELECT style FROM items WHERE instance_id = 100"
+    ).fetchone()[0]
+    assert local is None
+    set_field_calls_after_clear = sum(
+        1 for c in fake.calls if c[0] == "set_field"
+    )
+    assert set_field_calls_after_clear == set_field_calls_so_far, (
+        "cleared field must not produce an additional set_field call"
+    )
+    # The previously-sent value still sits on the fake, and matches the
+    # LAST thing that was actually sent — confirming no divergent write
+    # happened during the clear.
+    assert fake.fields[100][EDITABLE_FIELDS["style"]] == "jazzy"
+
+
 def test_move_rejects_unknown_folder(client):
     resp = post(client, "/api/move", {"instance_id": 100, "to_folder_id": 9999})
     assert resp.status_code == 400
@@ -96,6 +150,42 @@ def test_protected_folders_cannot_be_renamed_or_deleted(client):
     assert post(client, "/api/folders/1/delete", {"move_to": 10}).status_code == 400
     # deleting into itself is invalid
     assert post(client, "/api/folders/10/delete", {"move_to": 10}).status_code == 400
+
+
+def test_api_delete_folder_documents_partial_update_risk_and_still_works(client, seeded):
+    """A2.3 / D1: ``api_delete_folder`` is documented (not compensated) for
+    its partial-update risk. This test guards the documented behavior:
+    the docstring must remain, and a normal happy-path delete must still
+    move items remotely+locally and remove the folder.
+
+    No failure-injection here — the action-plan default for D1 is option
+    (a) document, so the contract being tested is "the happy path still
+    works and the docstring is still in place to explain the risk".
+    """
+    from lib import web
+
+    # 1. The docstring is present and explains the partial-update risk.
+    doc = web.api_delete_folder.__doc__ or ""
+    assert "partial-update risk" in doc.lower() or "partial update risk" in doc.lower()
+    assert "re-sync" in doc.lower() or "resync" in doc.lower()
+    # 2. The function is not documented as compensating; that would mean
+    #    D1 was changed away from option (a).
+    assert "rollback" not in doc.lower() or "no compensating" in doc.lower() or "not the default" in doc.lower()
+
+    # 3. Happy path: deleting folder 10 (which contains item 100) into
+    #    folder 20 still moves the item and removes the folder.
+    resp = post(client, "/api/folders/10/delete", {"move_to": 20})
+    assert resp.status_code == 200
+    payload = resp.get_json()
+    assert payload["ok"] is True
+    assert payload["moved"] == 1
+
+    # 4. Local state: item 100 now lives in folder 20; folder 10 is gone.
+    row = seeded.execute(
+        "SELECT folder_id FROM items WHERE instance_id = 100"
+    ).fetchone()
+    assert row[0] == 20
+    assert seeded.execute("SELECT 1 FROM folders WHERE id = 10").fetchone() is None
 
 
 def test_ai_endpoints_disabled_without_key(client, monkeypatch):

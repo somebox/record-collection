@@ -24,6 +24,15 @@ class OpenRouterClient:
             timeout=120,
         )
 
+    def close(self) -> None:
+        self._http.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, _exc_type, _exc, _tb):
+        self.close()
+
     def complete(
         self,
         prompt: str,
@@ -45,10 +54,27 @@ class OpenRouterClient:
         if resp.is_error:
             raise AIError(f"OpenRouter HTTP {resp.status_code}: {resp.text[:200]}")
         data = resp.json()
-        choice = data["choices"][0]
-        content = choice["message"].get("content")
+        choices = data.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise AIError(f"OpenRouter response has no choices: {str(data)[:200]}")
+        choice = choices[0]
+        if not isinstance(choice, dict):
+            raise AIError(f"OpenRouter choice is not an object: {str(choice)[:200]}")
+        message = choice.get("message")
+        if not isinstance(message, dict):
+            raise AIError(
+                f"OpenRouter choice has no message: {str(choice)[:200]}"
+            )
+        content = message.get("content")
+        if not isinstance(content, str):
+            raise AIError(
+                f"OpenRouter message content is not a string: "
+                f"{type(message.get('content')).__name__}"
+            )
         if not content:
-            raise AIError(f"empty response (finish_reason={choice.get('finish_reason')})")
+            raise AIError(
+                f"empty response (finish_reason={choice.get('finish_reason')})"
+            )
         return content.strip()
 
     def complete_json(self, prompt: str, system: str | None = None, **kwargs) -> dict:
@@ -107,4 +133,7 @@ def classify_item(client: OpenRouterClient, item: dict, folder_names: list[str])
         f"Folders: {', '.join(folder_names)}\n\n{item_context(item)}\n\n"
         "Which folder fits this record best?"
     )
-    return client.complete_json(prompt, system=CLASSIFY_SYSTEM)
+    result = client.complete_json(prompt, system=CLASSIFY_SYSTEM)
+    if "folder" not in result or "reason" not in result:
+        raise AIError(f"incomplete classify response: {result}")
+    return {"folder": str(result["folder"]).strip(), "reason": str(result["reason"]).strip()}

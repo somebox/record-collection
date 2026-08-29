@@ -62,3 +62,34 @@ def test_invalid_retry_after_uses_default(monkeypatch):
     with client_with(lambda _request: next(responses)) as client:
         assert client.identity() == {"username": "tester"}
     assert waits == [DEFAULT_RETRY_DELAY]
+
+
+def test_malformed_ratelimit_header_raises_discogs_error():
+    """A non-numeric X-Discogs-Ratelimit-Remaining header must not crash
+    with a raw ValueError; it should surface as a clear DiscogsError."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"username": "tester"},
+            headers={"X-Discogs-Ratelimit-Remaining": "soon"},
+        )
+
+    with client_with(handler) as client:
+        with pytest.raises(DiscogsError, match=r"malformed X-Discogs-Ratelimit-Remaining"):
+            client.identity()
+
+
+def test_missing_ratelimit_header_uses_default(monkeypatch):
+    """When the ratelimit header is absent the client falls back to the
+    default '60' and the request proceeds normally."""
+    waits = []
+    monkeypatch.setattr("lib.discogs.time.sleep", waits.append)
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"username": "tester"})
+
+    with client_with(handler) as client:
+        assert client.identity() == {"username": "tester"}
+    # 60 >= 15 -> no throttling sleep
+    assert waits == []

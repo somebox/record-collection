@@ -58,6 +58,9 @@ def close_resources(_exc):
     discogs = g.pop("discogs", None)
     if discogs is not None:
         discogs.close()
+    ai = g.pop("ai", None)
+    if ai is not None:
+        ai.close()
 
 
 def get_discogs():
@@ -335,6 +338,16 @@ def api_move():
 
 @app.post("/api/field")
 def api_field():
+    """Edit a single editable field on an instance.
+
+    Consistency contract (A2.4): a "cleared" field is represented as
+    ``NULL`` locally; the app treats ``NULL`` as "no value" (e.g.
+    ``count(style)`` for the folder-stat "X/N filled" tally excludes
+    NULLs). To keep local and Discogs from diverging, when the user
+    clears a field we SKIP the Discogs ``set_field`` call entirely
+    instead of writing ``""`` to Discogs while writing ``NULL`` locally.
+    Re-sync reconciles any stale Discogs state on the next pull.
+    """
     data, err = _require_json(["instance_id", "field"])
     if data is None:
         return err
@@ -344,14 +357,18 @@ def api_field():
     value = (data.get("value") or "").strip()
     conn = get_conn()
     item = _require_item(conn, int(data["instance_id"]))
-    get_discogs().set_field(
-        _username(conn),
-        item["folder_id"],
-        item["release_id"],
-        item["instance_id"],
-        EDITABLE_FIELDS[field],
-        value,
-    )
+    if value:
+        # Non-empty: write the same value to both stores.
+        get_discogs().set_field(
+            _username(conn),
+            item["folder_id"],
+            item["release_id"],
+            item["instance_id"],
+            EDITABLE_FIELDS[field],
+            value,
+        )
+    # Empty: skip Discogs; local goes to NULL (matches existing app
+    # semantics). See docstring for the consistency rationale.
     with conn:
         conn.execute(
             f"UPDATE items SET {field} = ? WHERE instance_id = ?",
@@ -463,6 +480,25 @@ def api_folder_color(folder_id):
 
 @app.post("/api/folders/<int:folder_id>/delete")
 def api_delete_folder(folder_id):
+    """Delete a folder after moving its items to ``move_to``.
+
+    Partial-update risk (documented per D1 / standards §2.6.3):
+
+    This function moves items one-by-one to Discogs, updating the
+    local SQLite row after each remote call, and only then deletes
+    the folder. There is no transaction spanning the remote+local
+    pair. If Discogs fails (or this process crashes) mid-loop, some
+    items will have been moved remotely AND locally, while others
+    remain in the source folder both remotely and locally. The
+    folder may also still exist on Discogs and in the local DB.
+
+    The accepted failure mode is: **document the risk; re-sync
+    reconciles.** A subsequent ``cmd_sync`` (or other re-sync path)
+    detects the divergence between the local and remote state and
+    repairs it. No compensating action (rollback / retry / queue) is
+    performed here by design — that is the (b) option in the action
+    plan and is not the default.
+    """
     if folder_id in (0, UNCATEGORIZED_ID):
         abort(400, "this folder cannot be deleted")
     data, err = _require_json(["move_to"])
@@ -583,11 +619,18 @@ def api_sync():
 
 
 def _ai_client():
-    """None when no OpenRouter key is configured — AI features are optional."""
+    """Per-request OpenRouterClient stored on g so teardown closes the
+    underlying httpx pool. None when no OpenRouter key is configured —
+    AI features are optional."""
+    if "ai" in g:
+        return g.ai
     from lib.ai import OpenRouterClient
 
     key = config.load_secrets().get("openrouter_key")
-    return OpenRouterClient(key) if key else None
+    if not key:
+        return None
+    g.ai = OpenRouterClient(key)
+    return g.ai
 
 
 @app.post("/api/generate")

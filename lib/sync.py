@@ -19,7 +19,11 @@ FIELD_STYLE = 5
 def _artist_names(artists: list[dict]) -> str:
     names = []
     for a in artists:
-        name = a.get("anv") or a["name"]
+        # Discogs may omit both anv and name for malformed artist entries;
+        # skip those rather than aborting the whole pull.
+        name = a.get("anv") or a.get("name")
+        if not name:
+            continue
         names.append(re.sub(r" \(\d+\)$", "", name))  # drop Discogs disambiguation suffix
     return ", ".join(names)
 

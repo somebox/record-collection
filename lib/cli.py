@@ -18,8 +18,15 @@ def cmd_auth(args: argparse.Namespace) -> int:
         discogs = DiscogsClient(secrets["discogs_pat"])
         me = discogs.identity()
         username = me["username"]
-        total = next(f["count"] for f in discogs.folders(username) if f["id"] == 0)
-        print(f"✔ discogs: authenticated as {username} ({total} records)")
+        all_folders = discogs.folders(username)
+        root = next((f for f in all_folders if f["id"] == 0), None)
+        if root is None:
+            print(
+                f"⚠ discogs: authenticated as {username} but folder 0 (All) is missing; "
+                "skipping record count"
+            )
+        else:
+            print(f"✔ discogs: authenticated as {username} ({root['count']} records)")
     except DiscogsError as e:
         print(f"✘ discogs: {e}")
         ok = False
@@ -133,8 +140,10 @@ def cmd_classify(args: argparse.Namespace) -> int:
         sys.exit("no OpenRouter key in secrets.yaml — AI features are disabled")
     conn = db.connect()
     client = OpenRouterClient(secrets["openrouter_key"])
-    discogs = DiscogsClient(secrets["discogs_pat"]) if args.apply else None
     username = db.get_setting(conn, "username")
+    if args.apply and not username:
+        sys.exit("run `records sync` first")
+    discogs = DiscogsClient(secrets["discogs_pat"]) if args.apply else None
     folders = {
         f["name"]: f["id"]
         for f in conn.execute("SELECT * FROM folders WHERE id != 1").fetchall()
