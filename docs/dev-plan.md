@@ -12,7 +12,7 @@ tags: [plan, milestones, history]
 High-level sequence. Each milestone ends in something usable.
 Status: all 6 milestones done (2026-08-22). Since then: collection fully enriched
 (268/268 Style+Summary), Uncategorized filed, rock split into subgenres, artist
-sections created, folder colors, paid prices, multi-select bulk actions, modal
+sections created, folder colors, purchase prices, multi-select bulk actions, modal
 detail UX, variable-height labels, CSS baseline + styleguide. Published at
 github.com/somebox/record-collection.
 
