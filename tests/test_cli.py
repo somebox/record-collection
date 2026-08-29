@@ -1,6 +1,7 @@
 """Tests for CLI command guards (A2.5, A2.6)."""
 
 import argparse
+import json
 
 import pytest
 
@@ -117,3 +118,197 @@ def test_cmd_classify_without_apply_does_not_require_username(conn, monkeypatch)
     args = argparse.Namespace(apply=False, review=None, limit=20)
     rc = cli.cmd_classify(args)
     assert rc == 0
+
+
+# -- A4.3: --limit must be positive and bounded ------------------------------
+
+
+@pytest.mark.parametrize("bad_limit", [0, -1, -1000])
+def test_cmd_summarize_rejects_non_positive_limit(monkeypatch, bad_limit):
+    """A4.3: argparse ``type=int`` only validates parseability. ``--limit 0``
+    and negative values must exit with a clear error before any AI/DB
+    work happens."""
+    monkeypatch.setattr(cli.config, "load_secrets", _secrets_with_openrouter)
+    args = argparse.Namespace(missing=False, write=False, limit=bad_limit)
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_summarize(args)
+    assert "--limit must be a positive integer" in str(exc.value)
+
+
+@pytest.mark.parametrize("bad_limit", [0, -1, -1000])
+def test_cmd_classify_rejects_non_positive_limit(monkeypatch, bad_limit):
+    """A4.3: same guard applies to ``records classify``."""
+    monkeypatch.setattr(cli.config, "load_secrets", _secrets_with_openrouter)
+    args = argparse.Namespace(apply=False, review=None, limit=bad_limit)
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_classify(args)
+    assert "--limit must be a positive integer" in str(exc.value)
+
+
+def test_cmd_summarize_rejects_oversized_limit(monkeypatch):
+    """A4.3: cap --limit at cli.MAX_LIMIT so a fat-fingered 999999 cannot
+    stall the CLI for hours. The check happens before any AI/DB call."""
+    monkeypatch.setattr(cli.config, "load_secrets", _secrets_with_openrouter)
+    args = argparse.Namespace(missing=False, write=False, limit=cli.MAX_LIMIT + 1)
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_summarize(args)
+    assert f"--limit must be at most {cli.MAX_LIMIT}" in str(exc.value)
+
+
+def test_cmd_classify_rejects_oversized_limit(monkeypatch):
+    """A4.3: same upper bound applies to ``records classify``."""
+    monkeypatch.setattr(cli.config, "load_secrets", _secrets_with_openrouter)
+    args = argparse.Namespace(apply=False, review=None, limit=cli.MAX_LIMIT + 1)
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_classify(args)
+    assert f"--limit must be at most {cli.MAX_LIMIT}" in str(exc.value)
+
+
+# -- A4.5: cmd_restore input validation --------------------------------------
+
+
+def _write_backup(path, **overrides):
+    """Produce a minimal valid backup file payload."""
+    payload = {
+        "exported_at": "2024-01-01T00:00:00+00:00",
+        "purchases": {},
+        "folder_colors": {},
+        "year_overrides": {},
+    }
+    payload.update(overrides)
+    path.write_text(json.dumps(payload))
+    return payload
+
+
+def test_cmd_restore_exits_when_file_missing(tmp_path):
+    """A4.5: a missing backup file is a hard error, not a stack trace."""
+    args = argparse.Namespace(file=str(tmp_path / "does-not-exist.json"))
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_restore(args)
+    assert "file not found" in str(exc.value)
+
+
+def test_cmd_restore_exits_when_file_empty(tmp_path):
+    """A4.5: an empty file is rejected before json.load() raises."""
+    path = tmp_path / "empty.json"
+    path.write_text("")
+    args = argparse.Namespace(file=str(path))
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_restore(args)
+    assert "empty" in str(exc.value)
+
+
+def test_cmd_restore_exits_on_invalid_json(tmp_path):
+    """A4.5: garbage in the backup file produces a clear error."""
+    path = tmp_path / "bad.json"
+    path.write_text("{not json")
+    args = argparse.Namespace(file=str(path))
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_restore(args)
+    assert "cannot read JSON" in str(exc.value)
+
+
+def test_cmd_restore_exits_when_top_level_not_object(tmp_path):
+    """A4.5: a JSON array or scalar at the top level is rejected before
+    any DB write. Without this guard ``.get("purchases")`` would raise
+    AttributeError deep in the write loop."""
+    path = tmp_path / "list.json"
+    path.write_text("[1, 2, 3]")
+    args = argparse.Namespace(file=str(path))
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_restore(args)
+    assert "top-level JSON must be an object" in str(exc.value)
+
+
+def test_cmd_restore_exits_when_required_keys_missing(tmp_path):
+    """A4.5: a backup missing one of the four top-level keys is rejected
+    with a list of the missing keys."""
+    path = tmp_path / "thin.json"
+    path.write_text(json.dumps({"exported_at": "x", "purchases": {}}))
+    args = argparse.Namespace(file=str(path))
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_restore(args)
+    msg = str(exc.value)
+    assert "missing required keys" in msg
+    assert "folder_colors" in msg
+    assert "year_overrides" in msg
+
+
+def test_cmd_restore_exits_on_non_int_instance_id(tmp_path, seeded):
+    """A4.5: a non-numeric instance_id key in ``purchases`` is rejected
+    before any DB write."""
+    path = tmp_path / "bad.json"
+    _write_backup(path, purchases={"not-an-int": 1.0})
+    args = argparse.Namespace(file=str(path))
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_restore(args)
+    assert "not an int" in str(exc.value)
+    # Nothing was written.
+    assert seeded.execute("SELECT count(*) FROM purchases").fetchone()[0] == 0
+
+
+def test_cmd_restore_exits_on_unknown_instance_id(tmp_path, seeded):
+    """A4.5: an instance_id that doesn't exist in ``items`` is rejected
+    so we never insert an orphan purchase row."""
+    path = tmp_path / "bad.json"
+    _write_backup(path, purchases={"99999": 1.0})
+    args = argparse.Namespace(file=str(path))
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_restore(args)
+    assert "unknown instance_id" in str(exc.value)
+    assert seeded.execute("SELECT count(*) FROM purchases").fetchone()[0] == 0
+
+
+def test_cmd_restore_exits_on_out_of_range_price(tmp_path, seeded):
+    """A4.5: a negative or absurdly large paid price is rejected (same
+    bound as ``api_paid``)."""
+    path_neg = tmp_path / "neg.json"
+    _write_backup(path_neg, purchases={"100": -1.0})
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_restore(argparse.Namespace(file=str(path_neg)))
+    assert "out of range" in str(exc.value)
+
+    path_big = tmp_path / "big.json"
+    _write_backup(path_big, purchases={"100": 1_000_000.01})
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_restore(argparse.Namespace(file=str(path_big)))
+    assert "out of range" in str(exc.value)
+
+
+def test_cmd_restore_exits_on_unknown_folder_id(tmp_path, seeded):
+    """A4.5: a folder_id in ``folder_colors`` that doesn't exist is
+    rejected so we never run an UPDATE that silently affects 0 rows."""
+    path = tmp_path / "bad.json"
+    _write_backup(path, folder_colors={"99999": "#abcdef"})
+    args = argparse.Namespace(file=str(path))
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_restore(args)
+    assert "unknown folder_id" in str(exc.value)
+
+
+def test_cmd_restore_exits_on_invalid_year(tmp_path, seeded):
+    """A4.5: a year outside 1..9999 is rejected (matches ``api_year``)."""
+    path = tmp_path / "bad.json"
+    _write_backup(path, year_overrides={"100": 10000})
+    args = argparse.Namespace(file=str(path))
+    with pytest.raises(SystemExit) as exc:
+        cli.cmd_restore(args)
+    assert "out of range" in str(exc.value)
+
+
+def test_cmd_restore_happy_path_restores_all_three_categories(tmp_path, seeded):
+    """A4.5: a fully-valid backup file restores all three categories
+    successfully and leaves the DB in the expected state."""
+    path = tmp_path / "good.json"
+    _write_backup(
+        path,
+        purchases={"100": 12.50},
+        folder_colors={"10": "#d0e6f2"},
+        year_overrides={"100": 1958},
+    )
+    args = argparse.Namespace(file=str(path))
+    rc = cli.cmd_restore(args)
+    assert rc == 0
+    assert seeded.execute("SELECT paid_price FROM purchases WHERE instance_id = 100").fetchone()[0] == 12.5
+    assert seeded.execute("SELECT color FROM folders WHERE id = 10").fetchone()[0] == "#d0e6f2"
+    assert seeded.execute("SELECT year FROM year_overrides WHERE instance_id = 100").fetchone()[0] == 1958

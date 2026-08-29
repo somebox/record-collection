@@ -179,6 +179,31 @@ def test_complete_json_raises_on_no_braces():
             client.complete_json("x")
 
 
+def test_complete_json_greedy_regex_with_two_objects():
+    r"""Documents the current behavior of ``complete_json`` when the model
+    response contains two JSON-like braces (e.g. two objects, or one
+    object plus noise that looks like one).
+
+    The parser uses ``re.search(r"\{.*\}", text, re.DOTALL)`` -- greedy
+    with DOTALL -- so it captures from the first ``{`` to the *last* ``}``
+    in the response. With two objects back-to-back (or with prose
+    between them), the captured substring is not a single valid JSON
+    document, so ``json.loads`` raises ``JSONDecodeError`` which the
+    parser re-raises as ``AIError("bad JSON in response: ...")``.
+
+    The Phase 2 review flagged this as a "consider hardening" item but
+    explicitly asked us NOT to fix it in this pass -- only to document
+    the behavior. If a future change swaps to a non-greedy or balanced-
+    brace strategy, update or remove this test to match.
+    """
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return _chat_response('here you go: {"a": 1} and then {"b": 2}')
+
+    with _client_with(handler) as client:
+        with pytest.raises(AIError, match=r"bad JSON in response"):
+            client.complete_json("x")
+
+
 # -- summarize_item / classify_item end-to-end -------------------------------
 
 
@@ -216,3 +241,33 @@ def test_classify_item_raises_on_missing_keys():
     with _client_with(handler) as client:
         with pytest.raises(AIError, match=r"incomplete classify"):
             classify_item(client, ITEM, ["jazz", "rock"])
+
+
+# -- A3.2 / §2.6.6: per-request AI client is closed by Flask teardown -------
+
+
+def test_ai_client_is_closed_at_request_teardown():
+    """A3.2: when an AI-using route runs, ``_ai_client`` stores the
+    ``OpenRouterClient`` on ``g`` so ``close_resources`` can call
+    ``close()`` on it. After the request exits, the underlying
+    ``httpx.Client`` must be closed so its connection pool is released.
+
+    Mirrors the existing ``test_discogs_client_is_closed_at_request_teardown``
+    pattern but for the AI path: install the client on ``g.ai`` inside a
+    request context, then exit the context and verify the underlying
+    ``httpx.Client`` was closed by the teardown hook.
+    """
+    from flask import g
+
+    from lib.web import app
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return _chat_response('{"folder": "jazz", "reason": "modal"}')
+
+    ai_client = _client_with(handler)
+    assert not ai_client._http.is_closed
+
+    with app.test_request_context():
+        g.ai = ai_client
+    # Teardown has now fired; the AI client stored on g should be closed.
+    assert ai_client._http.is_closed

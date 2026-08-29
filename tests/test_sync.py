@@ -76,6 +76,7 @@ def test_pull_preserves_folder_colors(conn):
 
 def test_pull_replaces_stale_items(conn):
     with conn:
+        conn.execute("INSERT INTO folders (id, name, count) VALUES (1, 'Uncategorized', 0)")
         conn.execute(
             "INSERT INTO items (instance_id, release_id, folder_id, title, artist) "
             "VALUES (999, 1, 1, 'Gone', 'Nobody')"

@@ -1,8 +1,11 @@
 """SQLite mirror of the Discogs collection."""
 
+import logging
 import sqlite3
 
 from lib.config import DB_PATH
+
+log = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS folders (
@@ -71,7 +74,30 @@ def connect() -> sqlite3.Connection:
         if column not in cols:
             with conn:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
+    _enable_foreign_keys(conn)
     return conn
+
+
+def _enable_foreign_keys(conn: sqlite3.Connection) -> None:
+    """Turn on FK enforcement, but only if no orphan rows exist.
+
+    SQLite defaults ``PRAGMA foreign_keys`` to OFF on every new
+    connection, so the ``REFERENCES`` on ``items.folder_id`` is currently
+    not enforced. Enabling it would surface any pre-existing orphan
+    rows as errors on the next write, so check first.
+    """
+    orphan = conn.execute(
+        "SELECT count(*) FROM items i LEFT JOIN folders f "
+        "ON i.folder_id = f.id WHERE f.id IS NULL"
+    ).fetchone()[0]
+    if orphan:
+        log.warning(
+            "skipping PRAGMA foreign_keys=ON: %d orphan items reference "
+            "missing folders; clean them up before re-enabling",
+            orphan,
+        )
+        return
+    conn.execute("PRAGMA foreign_keys = ON")
 
 
 def get_setting(conn: sqlite3.Connection, key: str) -> str | None:

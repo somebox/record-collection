@@ -5,6 +5,23 @@ import sys
 
 from lib import config
 
+# Upper bound for `--limit` on summarize/classify. Caps a single run so a
+# fat-fingered ``--limit 999999`` cannot OOM the OpenRouter client or stall
+# the CLI for hours. The actions are AI-driven; 1000 is generous for a
+# human-driven batch.
+MAX_LIMIT = 1000
+
+
+def _check_limit(limit: int) -> None:
+    """Reject negative/zero or absurdly large ``--limit`` values. Exits
+    with a clear message because argparse ``type=int`` only validates
+    parseability, not the semantic range. Mirrors the ``run `records
+    sync` first`` style used elsewhere in this module."""
+    if limit <= 0:
+        sys.exit(f"--limit must be a positive integer (got {limit})")
+    if limit > MAX_LIMIT:
+        sys.exit(f"--limit must be at most {MAX_LIMIT} (got {limit})")
+
 
 def cmd_auth(args: argparse.Namespace) -> int:
     from lib.ai import AIError, OpenRouterClient
@@ -80,6 +97,7 @@ def cmd_summarize(args: argparse.Namespace) -> int:
     from lib.discogs import DiscogsClient
     from lib.sync import FIELD_STYLE, FIELD_SUMMARY
 
+    _check_limit(args.limit)
     secrets = config.load_secrets()
     if not secrets.get("openrouter_key"):
         sys.exit("no OpenRouter key in secrets.yaml — AI features are disabled")
@@ -135,6 +153,7 @@ def cmd_classify(args: argparse.Namespace) -> int:
     from lib.ai import AIError, OpenRouterClient, classify_item
     from lib.discogs import DiscogsClient
 
+    _check_limit(args.limit)
     secrets = config.load_secrets()
     if not secrets.get("openrouter_key"):
         sys.exit("no OpenRouter key in secrets.yaml — AI features are disabled")
@@ -207,9 +226,11 @@ def cmd_labels(args: argparse.Namespace) -> int:
     def divider_image(folder):
         with app.app_context():
             _stats, top_genres = folder_stats(conn, folder["id"])
-        qr = f"https://www.discogs.com/user/{username}/collection?folder={folder['id']}"
         return labels.render_divider(
-            folder["name"], " · ".join(top_genres), qr, folder_id=folder["id"]
+            folder["name"],
+            labels.join_genre_line(top_genres),
+            labels.divider_qr_url(username, folder["id"]),
+            folder_id=folder["id"],
         )
 
     def find_folder(name):
@@ -306,32 +327,102 @@ def cmd_backup(args: argparse.Namespace) -> int:
 
 
 def cmd_restore(args: argparse.Namespace) -> int:
+    """Restore a backup file produced by ``records backup``.
+
+    A4.5: validate the file is readable, has the expected top-level
+    shape, and that every value inside is the right type AND refers to
+    an existing row. A malformed backup is rejected before any write so
+    we never end up with a half-restored DB (e.g. paid price inserted
+    but the instance doesn't exist, leaving a dangling FK reference).
+    """
     import json
+    from pathlib import Path
 
     from lib import db
 
-    with open(args.file) as f:
-        data = json.load(f)
+    path = Path(args.file)
+    if not path.is_file():
+        sys.exit(f"restore: file not found: {args.file}")
+    if not path.stat().st_size:
+        sys.exit(f"restore: file is empty: {args.file}")
+    try:
+        with path.open() as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        sys.exit(f"restore: cannot read JSON from {args.file}: {e}")
+
+    if not isinstance(data, dict):
+        sys.exit("restore: top-level JSON must be an object")
+
+    expected_keys = {"exported_at", "purchases", "folder_colors", "year_overrides"}
+    if not expected_keys.issubset(data):
+        missing = expected_keys - data.keys()
+        sys.exit(
+            f"restore: backup is missing required keys: {', '.join(sorted(missing))}"
+        )
+
+    purchases = data["purchases"]
+    folder_colors = data["folder_colors"]
+    year_overrides = data["year_overrides"]
+    if not (isinstance(purchases, dict) and isinstance(folder_colors, dict)
+            and isinstance(year_overrides, dict)):
+        sys.exit("restore: purchases/folder_colors/year_overrides must be objects")
+
     conn = db.connect()
+    # Validate that every ID refers to an existing row and that every
+    # value is the right type. Bail before any INSERT so the DB stays
+    # consistent on a bad backup.
+    for instance_id, price in purchases.items():
+        try:
+            iid = int(instance_id)
+        except (TypeError, ValueError):
+            sys.exit(f"restore: purchases key {instance_id!r} is not an int")
+        if not isinstance(price, (int, float)) or isinstance(price, bool):
+            sys.exit(f"restore: paid price for instance {iid} is not a number")
+        if not 0 <= price <= 1_000_000:
+            sys.exit(f"restore: paid price for instance {iid} is out of range")
+        if conn.execute("SELECT 1 FROM items WHERE instance_id = ?", (iid,)).fetchone() is None:
+            sys.exit(f"restore: purchases references unknown instance_id {iid}")
+    for folder_id, color in folder_colors.items():
+        try:
+            fid = int(folder_id)
+        except (TypeError, ValueError):
+            sys.exit(f"restore: folder_colors key {folder_id!r} is not an int")
+        if color is not None and not isinstance(color, str):
+            sys.exit(f"restore: color for folder {fid} is not a string")
+        if conn.execute("SELECT 1 FROM folders WHERE id = ?", (fid,)).fetchone() is None:
+            sys.exit(f"restore: folder_colors references unknown folder_id {fid}")
+    for instance_id, year in year_overrides.items():
+        try:
+            iid = int(instance_id)
+        except (TypeError, ValueError):
+            sys.exit(f"restore: year_overrides key {instance_id!r} is not an int")
+        if isinstance(year, bool) or not isinstance(year, int):
+            sys.exit(f"restore: year for instance {iid} is not an int")
+        if not 1 <= year <= 9999:
+            sys.exit(f"restore: year for instance {iid} is out of range")
+        if conn.execute("SELECT 1 FROM items WHERE instance_id = ?", (iid,)).fetchone() is None:
+            sys.exit(f"restore: year_overrides references unknown instance_id {iid}")
+
     with conn:
-        for instance_id, price in data.get("purchases", {}).items():
+        for instance_id, price in purchases.items():
             conn.execute(
                 "INSERT INTO purchases (instance_id, paid_price) VALUES (?, ?) "
                 "ON CONFLICT(instance_id) DO UPDATE SET paid_price = excluded.paid_price",
                 (int(instance_id), price),
             )
-        for folder_id, color in data.get("folder_colors", {}).items():
+        for folder_id, color in folder_colors.items():
             conn.execute("UPDATE folders SET color = ? WHERE id = ?", (color, int(folder_id)))
-        for instance_id, year in data.get("year_overrides", {}).items():
+        for instance_id, year in year_overrides.items():
             conn.execute(
                 "INSERT INTO year_overrides (instance_id, year) VALUES (?, ?) "
                 "ON CONFLICT(instance_id) DO UPDATE SET year = excluded.year",
                 (int(instance_id), int(year)),
             )
     print(
-        f"✔ restored {len(data.get('purchases', {}))} paid price(s), "
-        f"{len(data.get('folder_colors', {}))} color(s), "
-        f"{len(data.get('year_overrides', {}))} year override(s) from {args.file}"
+        f"✔ restored {len(purchases)} paid price(s), "
+        f"{len(folder_colors)} color(s), "
+        f"{len(year_overrides)} year override(s) from {args.file}"
     )
     return 0
 

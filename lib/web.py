@@ -4,8 +4,10 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 
 import io
+import sqlite3
 
 from flask import Flask, abort, g, jsonify, make_response, redirect, render_template, request, send_file, url_for
+from PIL import Image
 
 from lib import config, db
 from lib.sync import FIELD_MEDIA, FIELD_NOTES, FIELD_SLEEVE, FIELD_STYLE, FIELD_SUMMARY
@@ -25,6 +27,14 @@ MEDIA_CONDITIONS = [
     "Mint (M)", "Near Mint (NM or M-)", "Very Good Plus (VG+)", "Very Good (VG)",
     "Good Plus (G+)", "Good (G)", "Fair (F)", "Poor (P)",
 ]
+
+# Inclusive bounds for a user-supplied paid price. The lower bound of 0
+# rejects negative values; the upper bound is well above any plausible
+# record price (the most expensive single record ever sold was around
+# $1M) but small enough that a fat-fingered ``1e30`` cannot produce a
+# number that breaks downstream ``f"${paid_price:,.0f}"`` formatting in
+# ``lib/labels.py`` or the collection view.
+PAID_PRICE_MAX = 1_000_000.0
 SLEEVE_CONDITIONS = ["Generic", "No Cover"] + MEDIA_CONDITIONS
 
 # Pastel palette for the folder color chooser (light enough for black text).
@@ -44,7 +54,7 @@ SORT_COLUMNS = {
 app = Flask(__name__)
 
 
-def get_conn():
+def get_conn() -> sqlite3.Connection:
     if "conn" not in g:
         g.conn = db.connect()
     return g.conn
@@ -63,7 +73,7 @@ def close_resources(_exc):
         ai.close()
 
 
-def get_discogs():
+def get_discogs() -> "DiscogsClient":
     if "discogs" not in g:
         from lib.discogs import DiscogsClient
 
@@ -71,7 +81,7 @@ def get_discogs():
     return g.discogs
 
 
-def folder_list(conn):
+def folder_list(conn: sqlite3.Connection) -> tuple[list[sqlite3.Row], int]:
     folders = conn.execute(
         "SELECT f.id, f.name, count(i.instance_id) AS count FROM folders f "
         "LEFT JOIN items i ON i.folder_id = f.id GROUP BY f.id ORDER BY f.name COLLATE NOCASE"
@@ -105,7 +115,7 @@ def folder_color(folder_id):
     return f"hsl({hue:.0f}, 65%, 87%)"
 
 
-def folder_stats(conn, folder_id):
+def folder_stats(conn: sqlite3.Connection, folder_id: int | None) -> tuple[sqlite3.Row, list[str]]:
     where, params = ("WHERE i.folder_id = ?", [folder_id]) if folder_id is not None else ("", [])
     stats = conn.execute(
         f"""SELECT count(*) AS n, count(p.price) AS priced, coalesce(sum(p.price), 0) AS total,
@@ -151,11 +161,12 @@ def folder_view(folder_id):
         params += [f"%{q}%"] * 4
     where_sql = ("WHERE " + " AND ".join(where)) if where else ""
 
+    price_max_age_days = PRICE_MAX_AGE.total_seconds() / 86400
     items = conn.execute(
         f"""SELECT i.*, coalesce(yo.year, i.year) AS display_year,
                    yo.year AS year_override, p.price, p.fetched_at AS price_fetched_at,
                    CASE WHEN p.fetched_at IS NULL
-                          OR julianday('now') - julianday(p.fetched_at) >= 7
+                          OR julianday('now') - julianday(p.fetched_at) >= ?
                         THEN 1 ELSE 0 END AS price_stale,
                    f.name AS folder_name
             FROM items i
@@ -163,7 +174,7 @@ def folder_view(folder_id):
             LEFT JOIN prices p ON p.release_id = i.release_id
             JOIN folders f ON f.id = i.folder_id
             {where_sql} ORDER BY {order} {direction}""",
-        params,
+        params + [price_max_age_days],
     ).fetchall()
 
     current = None
@@ -272,7 +283,7 @@ def price(release_id):
     return jsonify({"price": release.get("lowest_price"), "cached": False})
 
 
-def _require_item(conn, instance_id: int):
+def _require_item(conn: sqlite3.Connection, instance_id: int) -> sqlite3.Row:
     item = conn.execute("SELECT * FROM items WHERE instance_id = ?", (instance_id,)).fetchone()
     if item is None:
         abort(404)
@@ -296,7 +307,7 @@ def _require_json(keys: list[str]) -> tuple:
     return data, None
 
 
-def _username(conn) -> str:
+def _username(conn: sqlite3.Connection) -> str:
     username = db.get_setting(conn, "username")
     if not username:
         abort(500, "no username in db — run `records sync` first")
@@ -312,6 +323,26 @@ def _handle_discogs_error(exc):
 from lib.discogs import DiscogsError  # noqa: E402
 
 app.register_error_handler(DiscogsError, _handle_discogs_error)
+
+
+def _handle_label_layout_error(exc):
+    """Label layout failures are a property of the content, not a server
+    fault. Return 400 (or a 400 PNG for the GET preview routes) instead
+    of letting the bare exception escape as 500."""
+    from lib import labels
+
+    if not isinstance(exc, labels.LabelLayoutError):
+        raise exc
+    if request.path.startswith("/api/"):
+        return jsonify({"error": str(exc)}), 400
+    # GET /labels/*.png previews get a 400 status with a plain-text body;
+    # browsers will show the text instead of a broken image.
+    return str(exc), 400, {"Content-Type": "text/plain; charset=utf-8"}
+
+
+from lib.labels import LabelLayoutError  # noqa: E402
+
+app.register_error_handler(LabelLayoutError, _handle_label_layout_error)
 
 
 @app.post("/api/move")
@@ -394,6 +425,8 @@ def api_paid():
                 value = float(raw)
             except ValueError:
                 abort(400, "paid price must be a number")
+            if not 0 <= value <= PAID_PRICE_MAX:
+                abort(400, f"paid price must be between 0 and {PAID_PRICE_MAX:.0f}")
             conn.execute(
                 "INSERT INTO purchases (instance_id, paid_price) VALUES (?, ?) "
                 "ON CONFLICT(instance_id) DO UPDATE SET paid_price = excluded.paid_price",
@@ -556,26 +589,29 @@ def api_suggest_folder():
     )
 
 
-def _png_response(img):
+def _png_response(img: Image.Image):
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
     return send_file(buf, mimetype="image/png")
 
 
-def _divider_image(conn, folder_id: int):
+def _divider_image(conn: sqlite3.Connection, folder_id: int) -> Image.Image:
     from lib import labels
 
     folder = conn.execute("SELECT * FROM folders WHERE id = ?", (folder_id,)).fetchone()
     if folder is None:
         abort(404)
     _stats, top_genres = folder_stats(conn, folder_id)
-    genre_line = " · ".join(top_genres)
-    qr_url = f"https://www.discogs.com/user/{_username(conn)}/collection?folder={folder_id}"
-    return labels.render_divider(folder["name"], genre_line, qr_url, folder_id=folder_id)
+    return labels.render_divider(
+        folder["name"],
+        labels.join_genre_line(top_genres),
+        labels.divider_qr_url(_username(conn), folder_id),
+        folder_id=folder_id,
+    )
 
 
-def _sleeve_image(conn, instance_id: int, include_paid: bool = False):
+def _sleeve_image(conn: sqlite3.Connection, instance_id: int, include_paid: bool = False) -> Image.Image:
     from lib import labels
 
     item = dict(_require_item(conn, instance_id))
@@ -678,9 +714,15 @@ def api_print():
     conn = get_conn()
     include_paid = bool(data.get("paid"))
     if kind == "divider":
-        images = [_divider_image(conn, int(data["id"]))]
+        try:
+            images = [_divider_image(conn, int(data["id"]))]
+        except labels.LabelLayoutError as e:
+            return jsonify({"error": str(e)}), 400
     elif kind == "sleeve":
-        images = [_sleeve_image(conn, int(data["id"]), include_paid=include_paid)]
+        try:
+            images = [_sleeve_image(conn, int(data["id"]), include_paid=include_paid)]
+        except labels.LabelLayoutError as e:
+            return jsonify({"error": str(e)}), 400
     elif kind == "sleeves":
         if "ids" in data:  # explicit selection
             ids = [int(i) for i in data["ids"]]
@@ -692,7 +734,10 @@ def api_print():
                     (int(data["id"]),),
                 )
             ]
-        images = [_sleeve_image(conn, i, include_paid=include_paid) for i in ids]
+        try:
+            images = [_sleeve_image(conn, i, include_paid=include_paid) for i in ids]
+        except labels.LabelLayoutError as e:
+            return jsonify({"error": str(e)}), 400
     else:
         abort(400, "unknown label type")
 

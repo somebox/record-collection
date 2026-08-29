@@ -107,10 +107,13 @@ def test_move_rejects_unknown_folder(client):
     assert resp.status_code == 400
 
 
-def test_move_to_same_folder_is_noop(client):
-    # no Discogs client is wired in tests: reaching Discogs would error loudly
+def test_move_to_same_folder_is_noop(client_with_fake):
+    """Moving an item into the folder it already lives in must be a
+    local no-op and must NOT reach Discogs."""
+    client, fake = client_with_fake
     resp = post(client, "/api/move", {"instance_id": 100, "to_folder_id": 10})
     assert resp.status_code == 200
+    assert fake.calls == []
 
 
 def test_paid_price_set_and_clear(client, seeded):
@@ -120,6 +123,45 @@ def test_paid_price_set_and_clear(client, seeded):
     assert post(client, "/api/paid", {"instance_id": 100, "value": ""}).status_code == 200
     assert seeded.execute("SELECT count(*) FROM purchases").fetchone()[0] == 0
     assert post(client, "/api/paid", {"instance_id": 100, "value": "abc"}).status_code == 400
+
+
+def test_paid_price_rejects_negative_and_oversized_values(client, seeded):
+    """A4.4: ``api_paid`` must reject negative and absurdly large paid
+    prices with a 400 response and must NOT write the bad value. The
+    chosen bound is ``lib.web.PAID_PRICE_MAX`` (currently 1_000_000);
+    see that constant for the rationale."""
+    from lib.web import PAID_PRICE_MAX
+
+    # Negative price: rejected, no row written.
+    resp = post(client, "/api/paid", {"instance_id": 100, "value": "-1.00"})
+    assert resp.status_code == 400
+    assert seeded.execute("SELECT count(*) FROM purchases").fetchone()[0] == 0
+
+    # Just below the upper bound is accepted (boundary check).
+    boundary = PAID_PRICE_MAX - 1
+    assert post(
+        client, "/api/paid", {"instance_id": 100, "value": str(boundary)}
+    ).status_code == 200
+    row = seeded.execute(
+        "SELECT paid_price FROM purchases WHERE instance_id = 100"
+    ).fetchone()
+    assert row[0] == boundary
+
+    # At the upper bound: still accepted.
+    assert post(
+        client, "/api/paid", {"instance_id": 100, "value": str(PAID_PRICE_MAX)}
+    ).status_code == 200
+
+    # One cent over the upper bound: rejected.
+    over = PAID_PRICE_MAX + 0.01
+    resp = post(client, "/api/paid", {"instance_id": 100, "value": str(over)})
+    assert resp.status_code == 400
+    # The previously-accepted boundary value is still in place; the
+    # over-boundary write must not have overwritten it.
+    row = seeded.execute(
+        "SELECT paid_price FROM purchases WHERE instance_id = 100"
+    ).fetchone()
+    assert row[0] == PAID_PRICE_MAX
 
 
 def test_display_year_override_set_validate_and_clear(client, seeded):
@@ -139,8 +181,14 @@ def test_display_year_override_set_validate_and_clear(client, seeded):
 def test_folder_color_validation(client, seeded):
     from lib.web import PALETTE
 
+    # Set to PALETTE[0]: must persist that exact color (not just any 200).
     assert post(client, f"/api/folders/10/color", {"color": PALETTE[0]}).status_code == 200
+    assert seeded.execute("SELECT color FROM folders WHERE id = 10").fetchone()[0] == PALETTE[0]
+
+    # Out-of-palette value rejected.
     assert post(client, f"/api/folders/10/color", {"color": "#123456"}).status_code == 400
+
+    # Clear: must persist as NULL (not just any 200).
     assert post(client, f"/api/folders/10/color", {"color": None}).status_code == 200
     assert seeded.execute("SELECT color FROM folders WHERE id = 10").fetchone()[0] is None
 
@@ -203,6 +251,37 @@ def test_label_previews_render(client):
     resp = client.get("/labels/divider/10.png")
     assert resp.status_code == 200
     assert resp.mimetype == "image/png"
+
+
+def test_web_divider_matches_cli_helper_construction(client, seeded):
+    """A4.6: the web route ``/labels/divider/<id>.png`` and the CLI's
+    ``records labels --divider`` must produce byte-identical divider
+    images for the same folder + username. Both call sites now go
+    through ``labels.divider_qr_url`` + ``labels.join_genre_line``; this
+    test guards the refactor by rendering both sides and comparing
+    bytes."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    from lib import labels, web
+
+    # 1. Hit the web route and decode the PNG.
+    web_bytes = client.get("/labels/divider/10.png").data
+    web_img = Image.open(BytesIO(web_bytes)).convert("L")
+
+    # 2. Reconstruct what the CLI path would produce: fetch folder
+    #    metadata, compute genre line, build QR URL via the same helper,
+    #    and render with the same ``render_divider`` function.
+    folder = seeded.execute("SELECT * FROM folders WHERE id = ?", (10,)).fetchone()
+    _stats, top_genres = web.folder_stats(seeded, 10)
+    helper_img = labels.render_divider(
+        folder["name"],
+        labels.join_genre_line(top_genres),
+        labels.divider_qr_url("tester", 10),
+        folder_id=10,
+    )
+    assert web_img.tobytes() == helper_img.tobytes()
 
 
 def test_crate_view(client):
@@ -373,3 +452,57 @@ def test_api_print_null_body_returns_400(client):
 
 def test_api_print_missing_keys_returns_400(client):
     assert _post_raw(client, "/api/print", "{}").status_code == 400
+
+
+def test_api_print_sleeve_returns_400_on_label_layout_error(client, monkeypatch):
+    """A3.3: when ``_header_layout`` raises ``LabelLayoutError`` because
+    the supplied content cannot be laid out (pathological title, byline,
+    or style), the print endpoint must return 400, not 500. We force
+    the error by stubbing the renderer's ``_header_layout`` so any call
+    raises ``LabelLayoutError``."""
+    from lib import labels, web
+
+    def _boom(*_args, **_kwargs):
+        raise labels.LabelLayoutError("header cannot fit at the minimum text size")
+
+    monkeypatch.setattr(labels, "_header_layout", _boom)
+    resp = post(client, "/api/print", {"type": "sleeve", "id": 100})
+    assert resp.status_code == 400
+    assert b"header cannot fit" in resp.data
+
+
+def test_api_print_sleeves_returns_400_on_label_layout_error(client, monkeypatch):
+    """A3.3: same contract for the bulk ``sleeves`` path. The first item
+    that triggers the layout error must short-circuit the render to a
+    400 response."""
+    from lib import labels
+
+    def _boom(*_args, **_kwargs):
+        raise labels.LabelLayoutError("header cannot fit at the minimum text size")
+
+    monkeypatch.setattr(labels, "_header_layout", _boom)
+    resp = post(client, "/api/print", {"type": "sleeves", "id": 10})
+    assert resp.status_code == 400
+    assert b"header cannot fit" in resp.data
+
+
+def test_label_preview_returns_400_on_label_layout_error(client, monkeypatch):
+    """A3.3: GET ``/labels/sleeve/<id>.png`` also renders a label and
+    would 500 on a layout error. The Flask error handler must return
+    400. (The divider route does not call ``_header_layout`` so the
+    error is structurally unreachable there; we cover it for symmetry
+    by stubbing ``render_divider`` directly.)"""
+    from lib import labels
+
+    def _boom(*_args, **_kwargs):
+        raise labels.LabelLayoutError("header cannot fit at the minimum text size")
+
+    monkeypatch.setattr(labels, "_header_layout", _boom)
+    resp = client.get("/labels/sleeve/100.png")
+    assert resp.status_code == 400
+    assert b"header cannot fit" in resp.data
+
+    monkeypatch.setattr(labels, "render_divider", _boom)
+    resp = client.get("/labels/divider/10.png")
+    assert resp.status_code == 400
+    assert b"header cannot fit" in resp.data

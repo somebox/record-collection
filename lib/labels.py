@@ -65,6 +65,17 @@ class PrintError(Exception):
     pass
 
 
+class LabelLayoutError(PrintError):
+    """Header/label content cannot be laid out within the size budget.
+
+    Raised by ``_header_layout`` (and any future layout pass that runs
+    out of room) when the available height is smaller than the minimum
+    type size the printer can produce. Treated as a 400 by the web
+    layer because it is a property of the supplied content, not a
+    printer or server failure.
+    """
+
+
 def _font(style: str, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(str(FONTS[style]), size)
 
@@ -188,7 +199,7 @@ def _header_layout(draw: ImageDraw.ImageDraw, title: str, byline: str, style_tex
         total += block_gap * (len(blocks) - 1)
         if total <= HEADER_TEXT_HEIGHT:
             return blocks, block_gap
-    raise ValueError("header cannot fit at the minimum text size")
+    raise LabelLayoutError("header cannot fit at the minimum text size")
 
 
 def _fit_block(
@@ -251,6 +262,28 @@ def _draw_scaled_caption(
     strip = strip.resize((width, height), Image.Resampling.LANCZOS)
     img.paste(strip, (x, y))
     return y + height
+
+
+def divider_qr_url(username: str, folder_id: int) -> str:
+    """Build the Discogs collection URL embedded in a folder divider QR.
+
+    Single source of truth for the URL shape: both the web app
+    (``lib/web.py:_divider_image``) and the CLI label printer
+    (``lib/cli.py:cmd_labels``) used to format it inline. The web path
+    uses ``_username(conn)``; the CLI uses the username from
+    ``db.get_setting``. Both now go through this helper so any future
+    change to the URL (e.g. switching to the v2 endpoint) lands in one
+    place.
+    """
+    return f"https://www.discogs.com/user/{username}/collection?folder={folder_id}"
+
+
+def join_genre_line(top_genres: list[str]) -> str:
+    """Join the top-N genre list into the single string ``render_divider``
+    expects. Both call sites used ``" · ".join(top_genres)``; this
+    helper preserves that exact format so the rendered pixels are
+    byte-identical between the web and CLI paths."""
+    return " · ".join(top_genres)
 
 
 def render_divider(name: str, genre_line: str, qr_url: str, folder_id: int | None = None) -> Image.Image:
