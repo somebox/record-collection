@@ -1,13 +1,11 @@
 ---
 title: "Development plan"
 last_updated: 2026-08-22
-status: archived
+status: current
 scope: operations
 audience: maintainer
 tags: [plan, milestones, history]
 ---
-
-> Archived. All milestones were completed 2026-08-22; the 'What's left' section is the only living content.
 
 # Development plan
 
@@ -30,7 +28,7 @@ Blocked on hardware (the printer has not been connected yet):
 Small operational items:
 - 1 record still Uncategorized (Charles Aznavour — no fitting folder).
 
-Accepted quality gaps (see docs/styleguide.md):
+Accepted quality gaps (see docs/frontend-styleguide.md):
 - No modal focus trap; table rows not keyboard-focusable; no mobile layout.
 
 Done since: `--divider all` batch printing, PDF label output + settings.yaml,

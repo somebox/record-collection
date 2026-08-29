@@ -86,8 +86,11 @@ records restore backup.json
 ## Development
 
 `uv run pytest` runs the test suite. See [docs/spec.md](docs/spec.md) for the
-architecture, [docs/styleguide.md](docs/styleguide.md) for frontend conventions,
+architecture, [docs/frontend-styleguide.md](docs/frontend-styleguide.md) for frontend conventions,
 and [docs/api-notes.md](docs/api-notes.md) for Discogs/OpenRouter/printer details.
+
+See [CHANGELOG.md](CHANGELOG.md) for what's new and
+[CONTRIBUTING.md](CONTRIBUTING.md) if you'd like to send a change.
 
 ## License
 

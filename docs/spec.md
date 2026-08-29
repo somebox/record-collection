@@ -75,7 +75,9 @@ No build step, localhost only.
   a draft the user approves before save; print-sleeve-label button; Discogs link.
 - **Print labels** — pick folder + label type, preview, print.
 
-Wireframe: see the published design canvas (docs/wireframe/).
+Wireframe: the initial-commit artboards (under `docs/wireframe/`) were archived
+out and are not maintained; the source of truth for current UI is the running app
+and the screenshots in `docs/images/`.
 
 ### 4. Labels (Brother QL over USB, or PDF)
 

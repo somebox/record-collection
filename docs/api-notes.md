@@ -1,24 +1,27 @@
 ---
 title: "API probe notes"
 last_updated: 2026-08-22
-status: archived
+status: current
 scope: integrations
 audience: developer
 tags: [discogs, openrouter, brother-ql]
 ---
 
-> Archived. These notes informed the initial implementation; verify against the live APIs before relying on endpoint details.
-
 # API probe notes (2026-08-22)
 
 Findings from probing the Discogs and OpenRouter APIs with the keys in `secrets.yaml`,
-plus label-printer research.
+plus label-printer research. The **endpoint shapes, auth headers, and library
+choices** are stable and verified; the **snapshot numbers** (folder counts,
+custom-field ids, model id alias) are illustrative and will drift — for the
+current values, query your own collection or read the live implementation in
+`lib/discogs.py`, `lib/ai.py`, and `lib/labels.py`.
 
 ## Discogs
 
 - Auth: PAT via header `Authorization: Discogs token=<PAT>`, plus a `User-Agent`
-  (Discogs requires one). Verified with `GET /oauth/identity` →
-  username **outfigurable** (user id 4902585).
+  (Discogs requires one). Verified with `GET /oauth/identity` → username
+  + numeric user id are returned (the test account used during probing was
+  removed; refer to your own `/oauth/identity` response for the live values).
 - Rate limit: 60 requests/min authenticated. Responses carry
   `X-Discogs-Ratelimit*` headers — the sync client must throttle and retry on 429.
 
