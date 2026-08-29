@@ -506,3 +506,30 @@ def test_label_preview_returns_400_on_label_layout_error(client, monkeypatch):
     resp = client.get("/labels/divider/10.png")
     assert resp.status_code == 400
     assert b"header cannot fit" in resp.data
+
+
+def test_api_move_non_numeric_instance_id_returns_400(client):
+    """A POST with a non-numeric ``instance_id`` must return 400, not 500.
+
+    The handler used to call ``int(data["instance_id"])`` directly, which
+    raised ``ValueError`` for strings like ``"abc"`` and surfaced as a
+    500. The ``_require_int`` helper now coerces with a 400 error
+    response instead.
+    """
+    resp = post(client, "/api/move", {"instance_id": "abc", "to_folder_id": 10})
+    assert resp.status_code == 400
+    assert b"integer" in resp.data
+
+
+def test_api_paid_non_numeric_instance_id_returns_400(client):
+    """Same 400-not-500 contract for ``/api/paid``."""
+    resp = post(client, "/api/paid", {"instance_id": "abc", "value": "12.50"})
+    assert resp.status_code == 400
+    assert b"integer" in resp.data
+
+
+def test_api_print_non_numeric_id_returns_400(client):
+    """Same 400-not-500 contract for ``/api/print`` (``sleeve`` branch)."""
+    resp = post(client, "/api/print", {"type": "sleeve", "id": "abc"})
+    assert resp.status_code == 400
+    assert b"integer" in resp.data

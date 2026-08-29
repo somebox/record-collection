@@ -307,6 +307,42 @@ def _require_json(keys: list[str]) -> tuple:
     return data, None
 
 
+def _require_int(data: dict, key: str, default=None) -> tuple:
+    """Coerce ``data[key]`` to ``int``. Returns ``(value, None)`` on
+    success, or ``(None, error_response)`` if the value is missing and
+    no default was supplied, or if coercion raises ``ValueError`` /
+    ``TypeError`` (e.g. ``"abc"``). Used by write handlers so a
+    non-numeric JSON value yields a 400, not an unhandled 500.
+    """
+    if key not in data or data[key] is None:
+        if default is not None:
+            return default, None
+        return None, make_response(
+            jsonify({"error": f"missing required field: {key}"}), 400
+        )
+    try:
+        return int(data[key]), None
+    except (ValueError, TypeError):
+        return None, make_response(
+            jsonify({"error": f"field {key!r} must be an integer"}), 400
+        )
+
+
+def _coerce_int(value, label: str) -> tuple:
+    """Coerce a raw value to ``int`` with a 400 error on failure.
+    Returns ``(value, None)`` on success or ``(None, error_response)``
+    if coercion raises ``ValueError`` / ``TypeError``. Used inside
+    list comprehensions where the value is already extracted (e.g. the
+    ``ids`` array for ``/api/print`` ``sleeves`` selection).
+    """
+    try:
+        return int(value), None
+    except (ValueError, TypeError):
+        return None, make_response(
+            jsonify({"error": f"field {label!r} must be an integer"}), 400
+        )
+
+
 def _username(conn: sqlite3.Connection) -> str:
     username = db.get_setting(conn, "username")
     if not username:
@@ -350,9 +386,14 @@ def api_move():
     data, err = _require_json(["instance_id", "to_folder_id"])
     if data is None:
         return err
+    instance_id, err = _require_int(data, "instance_id")
+    if err is not None:
+        return err
+    to_folder, err = _require_int(data, "to_folder_id")
+    if err is not None:
+        return err
     conn = get_conn()
-    item = _require_item(conn, int(data["instance_id"]))
-    to_folder = int(data["to_folder_id"])
+    item = _require_item(conn, instance_id)
     if conn.execute("SELECT 1 FROM folders WHERE id = ?", (to_folder,)).fetchone() is None:
         abort(400, "unknown folder")
     if to_folder != item["folder_id"]:
@@ -382,12 +423,15 @@ def api_field():
     data, err = _require_json(["instance_id", "field"])
     if data is None:
         return err
+    instance_id, err = _require_int(data, "instance_id")
+    if err is not None:
+        return err
     field = data["field"]
     if field not in EDITABLE_FIELDS:
         abort(400, "unknown field")
     value = (data.get("value") or "").strip()
     conn = get_conn()
-    item = _require_item(conn, int(data["instance_id"]))
+    item = _require_item(conn, instance_id)
     if value:
         # Non-empty: write the same value to both stores.
         get_discogs().set_field(
@@ -414,8 +458,11 @@ def api_paid():
     data, err = _require_json(["instance_id"])
     if data is None:
         return err
+    instance_id, err = _require_int(data, "instance_id")
+    if err is not None:
+        return err
     conn = get_conn()
-    item = _require_item(conn, int(data["instance_id"]))
+    item = _require_item(conn, instance_id)
     raw = (str(data.get("value") or "")).strip().lstrip("$")
     with conn:
         if not raw:
@@ -441,8 +488,11 @@ def api_year():
     data, err = _require_json(["instance_id"])
     if data is None:
         return err
+    instance_id, err = _require_int(data, "instance_id")
+    if err is not None:
+        return err
     conn = get_conn()
-    item = _require_item(conn, int(data["instance_id"]))
+    item = _require_item(conn, instance_id)
     raw = str(data.get("value") or "").strip()
     with conn:
         if not raw:
@@ -537,8 +587,10 @@ def api_delete_folder(folder_id):
     data, err = _require_json(["move_to"])
     if data is None:
         return err
+    move_to, err = _require_int(data, "move_to", default=UNCATEGORIZED_ID)
+    if err is not None:
+        return err
     conn = get_conn()
-    move_to = int(data.get("move_to") or UNCATEGORIZED_ID)
     if move_to == folder_id or conn.execute(
         "SELECT 1 FROM folders WHERE id = ?", (move_to,)
     ).fetchone() is None:
@@ -571,8 +623,11 @@ def api_suggest_folder():
     data, err = _require_json(["instance_id"])
     if data is None:
         return err
+    instance_id, err = _require_int(data, "instance_id")
+    if err is not None:
+        return err
     conn = get_conn()
-    item = dict(_require_item(conn, int(data["instance_id"])))
+    item = dict(_require_item(conn, instance_id))
     folders = {
         f["name"]: f["id"]
         for f in conn.execute("SELECT * FROM folders WHERE id != ?", (UNCATEGORIZED_ID,))
@@ -681,8 +736,11 @@ def api_generate():
     data, err = _require_json(["instance_id"])
     if data is None:
         return err
+    instance_id, err = _require_int(data, "instance_id")
+    if err is not None:
+        return err
     conn = get_conn()
-    item = dict(_require_item(conn, int(data["instance_id"])))
+    item = dict(_require_item(conn, instance_id))
     release_notes = (get_discogs().release(item["release_id"]).get("notes") or "").strip()
     try:
         draft = summarize_item(client, item, release_notes or None)
@@ -714,24 +772,38 @@ def api_print():
     conn = get_conn()
     include_paid = bool(data.get("paid"))
     if kind == "divider":
+        target_id, err = _require_int(data, "id")
+        if err is not None:
+            return err
         try:
-            images = [_divider_image(conn, int(data["id"]))]
+            images = [_divider_image(conn, target_id)]
         except labels.LabelLayoutError as e:
             return jsonify({"error": str(e)}), 400
     elif kind == "sleeve":
+        target_id, err = _require_int(data, "id")
+        if err is not None:
+            return err
         try:
-            images = [_sleeve_image(conn, int(data["id"]), include_paid=include_paid)]
+            images = [_sleeve_image(conn, target_id, include_paid=include_paid)]
         except labels.LabelLayoutError as e:
             return jsonify({"error": str(e)}), 400
     elif kind == "sleeves":
         if "ids" in data:  # explicit selection
-            ids = [int(i) for i in data["ids"]]
+            ids = []
+            for raw in data["ids"]:
+                value, err = _coerce_int(raw, "ids")
+                if err is not None:
+                    return err
+                ids.append(value)
         else:  # whole folder
+            target_id, err = _require_int(data, "id")
+            if err is not None:
+                return err
             ids = [
                 r["instance_id"]
                 for r in conn.execute(
                     "SELECT instance_id FROM items WHERE folder_id = ? ORDER BY artist, year",
-                    (int(data["id"]),),
+                    (target_id,),
                 )
             ]
         try:
