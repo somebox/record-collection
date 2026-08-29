@@ -1,3 +1,12 @@
+---
+title: "Record Collection — Spec"
+last_updated: 2026-08-22
+status: current
+scope: architecture
+audience: developer
+tags: [architecture, spec, design]
+---
+
 # Record Collection — Spec
 
 ## Purpose
@@ -51,7 +60,7 @@ argparse, stdlib — no CLI framework.
 - `records summarize [--missing] [--write]` — AI Style/Summary drafts.
 - `records classify [--apply] [--review FOLDER]` — AI folder suggestions.
 - `records backup / restore` — export and re-import app-local data
-  (paid prices, folder colors).
+  (purchase prices, folder colors).
 
 ### 3. Web app
 
@@ -90,7 +99,7 @@ Wireframe: see the published design canvas (docs/wireframe/).
 
 ### 5. AI assist (OpenRouter — optional)
 
-- Everything here requires an `openrouter_key` in `secrets.yaml`; without one the
+- Everything here is gated on an `openrouter_key` in `secrets.yaml`; without one the
   rest of the app works normally and AI actions report themselves disabled.
 - Summaries from Discogs release notes; `:online` web-search fallback when the
   release has no notes. Output constrained to short, label-friendly text.

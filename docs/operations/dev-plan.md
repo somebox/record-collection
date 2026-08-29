@@ -1,3 +1,14 @@
+---
+title: "Development plan"
+last_updated: 2026-08-22
+status: archived
+scope: operations
+audience: maintainer
+tags: [plan, milestones, history]
+---
+
+> Archived. All milestones were completed 2026-08-22; the 'What's left' section is the only living content.
+
 # Development plan
 
 High-level sequence. Each milestone ends in something usable.

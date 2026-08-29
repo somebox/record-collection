@@ -1,3 +1,12 @@
+---
+title: "Record Collection"
+last_updated: 2026-08-22
+status: current
+scope: overview
+audience: user
+tags: [readme, overview, getting-started]
+---
+
 # Record Collection
 
 Keeps a physical record collection in sync with [Discogs](https://www.discogs.com).

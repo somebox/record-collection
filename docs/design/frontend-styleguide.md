@@ -1,3 +1,12 @@
+---
+title: "Frontend styleguide"
+last_updated: 2026-08-22
+status: aging
+scope: design
+audience: developer
+tags: [design, styleguide, css, frontend]
+---
+
 # Frontend styleguide
 
 The web app is server-rendered Jinja with one stylesheet (`lib/static/style.css`)

@@ -1,3 +1,14 @@
+---
+title: "API probe notes"
+last_updated: 2026-08-22
+status: archived
+scope: integrations
+audience: developer
+tags: [discogs, openrouter, brother-ql]
+---
+
+> Archived. These notes informed the initial implementation; verify against the live APIs before relying on endpoint details.
+
 # API probe notes (2026-08-22)
 
 Findings from probing the Discogs and OpenRouter APIs with the keys in `secrets.yaml`,
